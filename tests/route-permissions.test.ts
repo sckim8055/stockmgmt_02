@@ -6,26 +6,30 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const API = join(process.cwd(), 'src/app/api');
+// Next.js 는 route.ts 외의 확장자도 라우트로 제공한다.
+const ROUTE_FILE = /^route\.(ts|tsx|js|jsx|mjs)$/;
+// 주석 안의 글자를 권한 선언으로 잘못 읽지 않게 지운다.
+const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
 
 function routeFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const p = join(dir, name);
-    return statSync(p).isDirectory() ? routeFiles(p) : name === 'route.ts' ? [p] : [];
+    return statSync(p).isDirectory() ? routeFiles(p) : ROUTE_FILE.test(name) ? [p] : [];
   });
 }
 
 function declared(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const file of routeFiles(API)) {
-    const src = readFileSync(file, 'utf8');
-    const path = '/' + relative(API, file).replace(/\/?route\.ts$/, '');
+    const src = stripComments(readFileSync(file, 'utf8'));
+    const path = '/' + relative(API, file).replace(/\/?route\.\w+$/, '');
     const re = /export const (GET|POST|PATCH|PUT|DELETE) = route\(([\s\S]*?),\s*async\b/g;
     for (const m of src.matchAll(re)) {
       // 옵션을 상수로 빼 둔 파일(예: SYSTEM_ONLY)은 그 상수의 내용을 이어 붙여 읽는다.
       const opts = m[2]!.replace(/\b[A-Z][A-Z0-9_]{2,}\b/g, (name) => new RegExp(`const ${name} = (\\{[^;]*\\})`).exec(src)?.[1] ?? name);
       const access = /access:\s*'(\w+)'/.exec(opts)?.[1] ?? '?';
       const perm = /resource:\s*'([\w.]+)',\s*operation:\s*'(\w+)'/.exec(opts);
-      const types = /types:\s*\[([^\]]*)\]/.exec(opts)?.[1]?.replace(/['\s]/g, '');
+      const types = /allow:\s*\[([^\]]*)\]/.exec(opts)?.[1]?.replace(/['\s]/g, '');
       out[`${m[1]} ${path}`] = access === 'permission' ? `${perm?.[1]}:${perm?.[2]}` : types ? `${access}[${types}]` : access;
     }
     // route() 로 선언한 수와 export 수가 같아야 한다(정규식이 놓친 라우트가 없는지).
@@ -64,7 +68,7 @@ describe('라우트별 권한 선언', () => {
         "GET /peripherals": "peripheral.stock:read",
         "GET /peripherals/[id]/history": "history.stock:read",
         "GET /peripherals/loans": "peripheral.loan:read",
-        "GET /system/companies": "type",
+        "GET /system/companies": "type[SYSTEM_ADMIN]",
         "PATCH /admin/roles/[id]": "admin.role:update",
         "PATCH /admin/users/[id]": "admin.user:update",
         "PATCH /assets/[id]": "asset.item:update",
@@ -106,8 +110,8 @@ describe('라우트별 권한 선언', () => {
         "POST /peripherals/adjust": "peripheral.adjust:execute",
         "POST /peripherals/issue": "peripheral.issue:execute",
         "POST /peripherals/receive": "peripheral.receive:execute",
-        "POST /system/acting-company": "type",
-        "POST /system/companies": "type",
+        "POST /system/acting-company": "type[SYSTEM_ADMIN]",
+        "POST /system/companies": "type[SYSTEM_ADMIN]",
       }
     `);
   });

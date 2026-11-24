@@ -31,25 +31,27 @@ interface Column {
   required?: boolean;
   type: 'text' | 'date' | 'number' | 'integer';
   max?: number;
+  /** 화면 API 와 같은 형식 규칙 */
+  pattern?: { re: RegExp; message: string };
   hint: string;
 }
 
 export const IMPORT_COLUMNS: Record<ImportKind, Column[]> = {
   persons: [
-    { key: 'employeeNo', header: '사번', type: 'text', max: 50, hint: '있으면 기업 안에서 고유해야 합니다.' },
+    { key: 'employeeNo', header: '사번', type: 'text', max: 40, hint: '있으면 기업 안에서 고유해야 합니다. 0으로 시작하는 사번은 셀 서식을 "텍스트"로 바꾼 뒤 입력하세요.' },
     { key: 'name', header: '이름', required: true, type: 'text', max: 100, hint: '필수' },
     { key: 'department', header: '부서', type: 'text', max: 80, hint: '없는 부서는 자동으로 만듭니다(부서 등록 권한 필요).' },
-    { key: 'email', header: '이메일', type: 'text', max: 200, hint: '선택' },
+    { key: 'email', header: '이메일', type: 'text', max: 200, pattern: { re: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, message: '이메일 형식이 올바르지 않습니다.' }, hint: '선택' },
   ],
   assets: [
     { key: 'assetTag', header: '자산태그', required: true, type: 'text', max: 64, hint: '필수. 기업 안에서 고유합니다.' },
     { key: 'category', header: '카테고리', required: true, type: 'text', max: 80, hint: '필수. 예: 노트북' },
-    { key: 'manufacturer', header: '제조사', required: true, type: 'text', max: 80, hint: '필수. 예: Lenovo' },
-    { key: 'model', header: '모델명', required: true, type: 'text', max: 120, hint: '필수. 예: ThinkPad X1' },
+    { key: 'manufacturer', header: '제조사', required: true, type: 'text', max: 100, hint: '필수. 예: Lenovo' },
+    { key: 'model', header: '모델명', required: true, type: 'text', max: 100, hint: '필수. 예: ThinkPad X1' },
     { key: 'serialNumber', header: '시리얼번호', type: 'text', max: 100, hint: '같은 모델 안에서 고유합니다.' },
     { key: 'department', header: '관리부서', type: 'text', max: 80, hint: '비우면 기본 부서(IT).' },
     { key: 'location', header: '위치', type: 'text', max: 200, hint: '자유 입력' },
-    { key: 'holderEmployeeNo', header: '보유자사번', type: 'text', max: 50, hint: '적으면 그 직원에게 배정된 상태로 등록합니다. 직원을 먼저 올려야 합니다.' },
+    { key: 'holderEmployeeNo', header: '보유자사번', type: 'text', max: 40, hint: '적으면 그 직원에게 배정된 상태로 등록합니다. 직원을 먼저 올려야 합니다.' },
     { key: 'purchaseDate', header: '구매일', type: 'date', hint: 'YYYY-MM-DD' },
     { key: 'purchasePrice', header: '구매가', type: 'number', hint: '숫자만. 입력 권한이 있어야 합니다.' },
     { key: 'supplier', header: '공급업체', type: 'text', max: 200, hint: '입력 권한이 있어야 합니다.' },
@@ -57,8 +59,8 @@ export const IMPORT_COLUMNS: Record<ImportKind, Column[]> = {
   ],
   peripherals: [
     { key: 'category', header: '카테고리', required: true, type: 'text', max: 80, hint: '필수. 예: 마우스' },
-    { key: 'manufacturer', header: '제조사', required: true, type: 'text', max: 80, hint: '필수' },
-    { key: 'model', header: '모델명', required: true, type: 'text', max: 120, hint: '필수' },
+    { key: 'manufacturer', header: '제조사', required: true, type: 'text', max: 100, hint: '필수' },
+    { key: 'model', header: '모델명', required: true, type: 'text', max: 100, hint: '필수' },
     { key: 'department', header: '관리부서', type: 'text', max: 80, hint: '비우면 기본 부서(IT).' },
     { key: 'qty', header: '수량', required: true, type: 'integer', hint: '필수. 1 이상의 정수. 현재 보유 수량에 더해집니다.' },
   ],
@@ -66,6 +68,9 @@ export const IMPORT_COLUMNS: Record<ImportKind, Column[]> = {
 
 /** 업로드에 필요한 권한(라우트 선언과 같아야 한다). 주변기기 업로드는 입고와 같은 일이므로 입고 권한을 쓴다. */
 export const IMPORT_RESOURCE: Record<ImportKind, string> = { persons: 'master.person', assets: 'asset.item', peripherals: 'peripheral.receive' };
+
+/** 업로드 권한에 더해 필요한 등록(create) 권한. 주변기기는 입고 권한이 곧 등록 권한이다. */
+const IMPORT_CREATE_RESOURCE: Record<ImportKind, string | null> = { persons: 'master.person', assets: 'asset.item', peripherals: null };
 
 export const IMPORT_TITLES: Record<ImportKind, string> = { persons: '직원', assets: '자산', peripherals: '주변기기' };
 
@@ -125,8 +130,11 @@ function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[]): { row
       if (col.type === 'text') {
         // 엑셀이 숫자로 저장한 사번·태그(예: 1001)는 글자로 바꾼다.
         const text = (typeof raw === 'number' ? String(raw) : typeof raw === 'boolean' ? (raw ? 'TRUE' : 'FALSE') : raw).trim();
-        if (hasNul(text)) fail(`${col.header}: 사용할 수 없는 문자가 들어 있습니다.`);
+        // 15자리를 넘는 숫자는 엑셀이 저장할 때 이미 값이 바뀌어 있다. 엉뚱한 사번·태그로 들어가지 않게 거부한다.
+        if (typeof raw === 'number' && (text.includes('e') || !Number.isSafeInteger(Math.trunc(raw)))) fail(`${col.header}: 숫자가 너무 큽니다. 셀 서식을 "텍스트"로 바꾼 뒤 다시 입력하세요.`);
+        else if (hasNul(text)) fail(`${col.header}: 사용할 수 없는 문자가 들어 있습니다.`);
         else if (col.max && text.length > col.max) fail(`${col.header}: 너무 깁니다. (최대 ${col.max}자)`);
+        else if (col.pattern && !col.pattern.re.test(text)) fail(`${col.header}: ${col.pattern.message}`);
         values[col.key] = text;
       } else if (col.type === 'date') {
         const iso = typeof raw === 'number' ? serialToIsoDate(raw) : typeof raw === 'string' ? raw.trim().replace(/[./]/g, '-').replace(/-(\d)(?=-|$)/g, '-0$1') : null;
@@ -296,11 +304,19 @@ export async function runImport(
 
   try {
     await tenant(async (db) => {
-      // 기준 정보를 만들 수 있으므로 두 잠금을 항상 같은 순서로 먼저 잡는다(교착 방지). 같은 기업의 업로드는 한 번에 하나씩 처리된다.
+      // 같은 기업의 업로드는 한 번에 하나만. 기다리지 않고 바로 거절한다(기다리는 요청이 DB 연결을 붙잡고 쌓이지 않게).
+      const free = await db.query<{ ok: boolean }>('SELECT pg_try_advisory_xact_lock(727005, hashtext($1)) AS ok', [actor.companyId]);
+      if (!free.rows[0]?.ok) throw new HttpError(409, 'IMPORT_BUSY', '이 기업의 다른 업로드가 처리 중입니다. 잠시 후 다시 시도하세요.');
+      // 기준 정보를 만들 수 있으므로 두 잠금을 항상 같은 순서로 먼저 잡는다(교착 방지).
       await lockCompanyAdministration(db, actor.companyId);
       await lockMasterData(db, actor.companyId);
       const access = await loadDataAccess(db, actor);
       const perms = await actorPermissions(db, actor);
+      // 업로드 권한은 "엑셀로 올릴 수 있다"는 것이고, 무엇을 만들 수 있는지는 등록 권한이 정한다. 둘 다 있어야 한다.
+      const createResource = IMPORT_CREATE_RESOURCE[kind];
+      if (createResource && perms !== null && !perms.has(permKey(createResource, 'create'))) {
+        throw new HttpError(403, 'FORBIDDEN', `${IMPORT_TITLES[kind]} 등록 권한이 없어 엑셀로 올릴 수 없습니다.`);
+      }
       if (kind === 'assets' && perms !== null && !perms.has(permKey('asset.assign', 'execute')) && rows.some((r) => r.values.holderEmployeeNo)) {
         errors.push({ row: 1, message: '보유자사번을 적으려면 자산 배정 권한이 필요합니다. 그 열을 비우고 올리거나 권한을 요청하세요.' });
         throw new RollbackImport();

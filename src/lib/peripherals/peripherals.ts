@@ -189,7 +189,8 @@ export async function receiveStock(db: Db, actor: Actor, access: DataAccess, inp
   );
   const stock = await lockStock(db, actor, access, found.rows[0]!.id);
   const onHand = stock.on_hand_qty + input.qty;
-  if (onHand > MAX_QTY) throw tooMany();
+  // 상한은 보유 + 대여 중 합계에 건다. 그래야 대여 중인 물건이 돌아와도 상한에 걸리지 않는다.
+  if (onHand + stock.on_loan_qty > MAX_QTY) throw tooMany();
   await setQty(db, actor, stock.id, onHand, stock.on_loan_qty);
   await writeTxn(db, actor, stock.id, { type: input.initial ? 'INITIAL' : 'RECEIVE', qty: input.qty, note: input.note });
   return { stockId: stock.id, onHandQty: onHand };
@@ -255,7 +256,6 @@ export async function issueStock(db: Db, actor: Actor, access: DataAccess, input
   );
   const onHand = stock.on_hand_qty + (input.action === 'RETURN' ? input.qty : 0);
   const onLoan = stock.on_loan_qty - input.qty;
-  if (onHand > MAX_QTY) throw tooMany();
   await setQty(db, actor, stock.id, onHand, onLoan);
   await writeTxn(db, actor, stock.id, {
     type: input.action, qty: input.action === 'RETURN' ? input.qty : -input.qty, personId: loan.person_id, loanId: loan.id, note: input.note,
@@ -276,6 +276,7 @@ export async function adjustStock(db: Db, actor: Actor, access: DataAccess, inpu
   let delta: number;
   if (input.action === 'ADJUST') {
     onHand = input.countedQty;
+    if (onHand + stock.on_loan_qty > MAX_QTY) throw tooMany();
     delta = onHand - stock.on_hand_qty;
     if (delta === 0) throw conflict('NO_CHANGE', '현재 수량과 같습니다.');
   } else {

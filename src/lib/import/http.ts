@@ -32,21 +32,32 @@ async function readUpload(req: Request): Promise<Uint8Array> {
   return bytes;
 }
 
+// 한 프로세스에서 동시에 처리하는 업로드 수. 업로드는 파일을 푸는 동안 다른 요청을 멈추게 하고(동기 처리),
+// 처리하는 동안 DB 연결 하나를 오래 잡는다. 여러 건이 겹쳐 서비스 전체가 느려지지 않도록 하나씩만 받는다.
+const MAX_CONCURRENT_IMPORTS = 1;
+let runningImports = 0;
+
 /** POST: ?mode=preview(기본) 는 검사만, ?mode=commit 은 반영. 오류가 있으면 아무것도 반영하지 않는다. */
 export async function handleImport(kind: ImportKind, req: Request, actor: Actor, tenant: <T>(fn: (db: Db) => Promise<T>) => Promise<T>): Promise<Response> {
   const mode = new URL(req.url).searchParams.get('mode') ?? 'preview';
   if (mode !== 'preview' && mode !== 'commit') throw badRequest('mode 는 preview 또는 commit 이어야 합니다.');
-  const bytes = await readUpload(req);
-  let sheet;
+  if (runningImports >= MAX_CONCURRENT_IMPORTS) throw new HttpError(429, 'IMPORT_BUSY', '다른 업로드가 처리 중입니다. 잠시 후 다시 시도하세요.');
+  runningImports++;
   try {
-    sheet = readXlsx(bytes);
-  } catch (err) {
-    if (err instanceof XlsxError) throw badRequest(err.message);
-    throw err;
+    const bytes = await readUpload(req);
+    let sheet;
+    try {
+      sheet = readXlsx(bytes);
+    } catch (err) {
+      if (err instanceof XlsxError) throw badRequest(err.message);
+      throw err;
+    }
+    const result = await runImport(tenant, actor, kind, sheet, { commit: mode === 'commit' });
+    // 반영을 요청했는데 오류로 반영하지 못했으면 422.
+    return json(result, { status: mode === 'commit' && !result.committed ? 422 : 200 });
+  } finally {
+    runningImports--;
   }
-  const result = await runImport(tenant, actor, kind, sheet, { commit: mode === 'commit' });
-  // 반영을 요청했는데 오류로 반영하지 못했으면 422.
-  return json(result, { status: mode === 'commit' && !result.committed ? 422 : 200 });
 }
 
 /** GET: 빈 양식 내려받기. 첫 시트가 입력용, 둘째 시트가 안내다. */

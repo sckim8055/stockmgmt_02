@@ -78,7 +78,7 @@ beforeAll(async () => {
   await userWith('viewer', [['asset.item', 'read'], ['master.person', 'read']]);
   // 자산 업로드만 가능: 기준 정보 등록·배정·제한 필드 권한 없음
   await userWith('importer', [['asset.item', 'read'], ['asset.item', 'create'], ['asset.item', 'import']]);
-  await userWith('hrimporter', [['asset.item', 'read'], ['asset.item', 'import'], ['asset.assign', 'execute'], ['master.model', 'create'], ['master.category', 'create']], [id.hr!]);
+  await userWith('hrimporter', [['asset.item', 'read'], ['asset.item', 'create'], ['asset.item', 'import'], ['asset.assign', 'execute'], ['master.model', 'create'], ['master.category', 'create']], [id.hr!]);
 });
 afterAll(async () => {
   await closeOwner();
@@ -137,7 +137,7 @@ describe('엑셀 읽기', () => {
     expect(bad(xlsx([Array.from({ length: XLSX_LIMITS.columns }, () => 'y')]))).toBe(false);
     expect(bad(xlsx([['x'.repeat(XLSX_LIMITS.cellChars + 1)]]))).toBe(true);
     // 압축 폭탄: 풀면 한도를 넘는 시트는 풀기 전에 거부한다.
-    const bomb = zipSync({ 'xl/worksheets/sheet1.xml': new Uint8Array(XLSX_LIMITS.entryBytes + 1) }, { level: 9 });
+    const bomb = zipSync({ 'xl/worksheets/sheet1.xml': new Uint8Array(XLSX_LIMITS.partBytes + 1) }, { level: 9 });
     expect(bomb.length).toBeLessThan(XLSX_LIMITS.fileBytes);
     expect(bad(bomb)).toBe(true);
   });
@@ -304,12 +304,17 @@ describe('자산 업로드', () => {
     expect((await one("SELECT count(*)::int AS n FROM app.category WHERE company_id = $1 AND name = '노트북'", [B.id])).n).toBe(1);
   });
 
-  it('동시에 올려도 교착 없이 차례로 처리되고, 겹치는 쪽은 거부된다', async () => {
+  it('동시에 올리면 하나만 처리하고 나머지는 기다리게 하지 않고 바로 거절한다', async () => {
     const tag = uniq('IA-');
     const model = uniq('Race');
     const file = () => xlsx([H.assets, asset(tag, { 3: model, 5: uniq('RaceDept') })]);
     const results = await Promise.all([upload(importAssets as Handler, 'admin', file()), upload(importAssets as Handler, 'admin', file()), upload(importAssets as Handler, 'admin', file())]);
-    expect(results.map((r) => r.status).sort()).toEqual([200, 422, 422]);
+    // 겹친 요청은 바로 거절(429)되고, 앞의 것이 끝난 뒤에 도착한 요청은 태그가 겹쳐 내용 오류(422)가 된다. 어느 쪽이든 한 건만 반영된다.
+    const statuses = results.map((r) => r.status);
+    expect(statuses.filter((x) => x === 200).length).toBe(1);
+    expect(statuses.every((x) => x === 200 || x === 429 || x === 422)).toBe(true);
+    // 끝난 뒤에는 다시 받을 수 있다(겹치는 태그라 이번에는 내용 오류로 거부된다).
+    expect((await upload(importAssets as Handler, 'admin', file())).status).toBe(422);
     expect((await one('SELECT count(*)::int AS n FROM app.item_model WHERE company_id = $1 AND name = $2', [A.id, model])).n).toBe(1);
   });
 });

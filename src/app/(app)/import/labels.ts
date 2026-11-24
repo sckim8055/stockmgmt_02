@@ -1,42 +1,38 @@
 // 엑셀 업로드 화면의 종류별 정보. 권한은 서버 라우트 선언(src/app/api/import/*/route.ts)과 같다.
+// 문구는 labels.text.ts 에 있다.
+import { useLang, type Lang } from '../../i18n';
+import { TEXT } from './labels.text';
 
 export type ImportKind = 'persons' | 'assets' | 'peripherals';
 
 export interface KindInfo {
-  title: string;
   /** 업로드·양식 내려받기에 필요한 권한 */
   permission: [resource: string, operation: string];
   /** 반영한 뒤 보러 갈 목록과 그 목록의 조회 권한 */
-  list: { href: string; label: string; permission: [resource: string, operation: string] };
-  templateFile: string;
-  intro: string;
+  list: { href: string; permission: [resource: string, operation: string] };
 }
 
 export const IMPORT_KINDS: ImportKind[] = ['persons', 'assets', 'peripherals'];
 
 export const KIND_INFO: Record<ImportKind, KindInfo> = {
-  persons: {
-    title: '직원',
-    permission: ['master.person', 'import'],
-    list: { href: '/master/persons', label: '직원 목록 보기', permission: ['master.person', 'read'] },
-    templateFile: '직원_업로드_양식.xlsx',
-    intro: '직원 명부를 한꺼번에 등록합니다. 없는 부서는 자동으로 만듭니다(부서 등록 권한 필요).',
-  },
-  assets: {
-    title: '자산',
-    permission: ['asset.item', 'import'],
-    list: { href: '/assets', label: '자산 목록 보기', permission: ['asset.item', 'read'] },
-    templateFile: '자산_업로드_양식.xlsx',
-    intro: '자산을 한꺼번에 등록합니다. 보유자사번을 적으면 그 직원에게 배정된 상태로 등록합니다(자산 배정 권한 필요).',
-  },
-  peripherals: {
-    title: '주변기기',
-    permission: ['peripheral.receive', 'execute'],
-    list: { href: '/peripherals', label: '주변기기 재고 보기', permission: ['peripheral.stock', 'read'] },
-    templateFile: '주변기기_업로드_양식.xlsx',
-    intro: '주변기기 재고 수량을 한꺼번에 입고합니다. 수량은 현재 보유 수량에 더해집니다.',
-  },
+  persons: { permission: ['master.person', 'import'], list: { href: '/master/persons', permission: ['master.person', 'read'] } },
+  assets: { permission: ['asset.item', 'import'], list: { href: '/assets', permission: ['asset.item', 'read'] } },
+  peripherals: { permission: ['peripheral.receive', 'execute'], list: { href: '/peripherals', permission: ['peripheral.stock', 'read'] } },
 };
+
+/** 종류별 문구(현재 언어): 제목, 목록 링크 이름, 양식 파일 이름, 안내 */
+export interface KindText {
+  title: string;
+  listLabel: string;
+  templateFile: string;
+  intro: string;
+}
+// 사전의 키가 종류 코드와 다르면 여기서 타입 오류가 난다.
+const KIND_TEXT: Record<Lang, Record<ImportKind, KindText>> = TEXT;
+
+export function useKindText(): Record<ImportKind, KindText> {
+  return KIND_TEXT[useLang()];
+}
 
 /** 서버가 미리보기·반영에 돌려주는 결과(src/lib/import/run.ts 의 ImportResult) */
 export interface ImportResult {

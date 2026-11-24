@@ -2,51 +2,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { RequireCompany, useShell } from '../../../shell';
 import { api, Badge, Button, ConfirmDialog, EmptyRow, ErrorText, LabeledField, Modal, PageHeader, smallInput, Table, td } from '../../../ui';
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
 
 type DataType = 'text' | 'number' | 'date' | 'boolean';
 
 const KEY_RE = /^[a-z][a-z0-9_]{0,39}$/;
-
-const T = {
-  title: '사용자 지정 필드',
-  add: '필드 추가',
-  loading: '불러오는 중…',
-  empty: '정의된 사용자 지정 필드가 없습니다.',
-  intro: '자산에 기본 항목 외의 값을 저장할 때 씁니다. 제한 필드는 "제한 사용자 정의 항목" 권한이 있는 사용자에게만 보입니다.',
-  colKey: '키',
-  colLabel: '표시 이름',
-  colType: '데이터 형식',
-  colRestricted: '제한',
-  colSort: '순서',
-  colStatus: '상태',
-  colActions: '작업',
-  type: { text: '텍스트', number: '숫자', date: '날짜', boolean: '예/아니오' } satisfies Record<DataType, string>,
-  restricted: '제한',
-  active: '사용',
-  inactive: '사용 안 함',
-  edit: '수정',
-  remove: '삭제',
-  saved: '저장했습니다.',
-  confirmDeleteTitle: '사용자 지정 필드 삭제',
-  confirmDelete: (k: string) =>
-    `"${k}" 필드 정의를 삭제합니다. 이 필드에 값이 저장된 자산이 하나라도 있으면 삭제할 수 없으며, 그때는 "사용 안 함"으로 바꾸세요.`,
-  formCreate: '사용자 지정 필드 추가',
-  formEdit: (k: string) => `사용자 지정 필드 수정 — ${k}`,
-  fKey: '키',
-  fKeyHint: '영문 소문자로 시작하고 영문 소문자·숫자·밑줄(_)만, 40자 이내. 만든 뒤에는 바꿀 수 없습니다.',
-  fKeyInvalid: '키 형식이 올바르지 않습니다.',
-  fLabel: '표시 이름',
-  fType: '데이터 형식',
-  fTypeHint: '만든 뒤에는 바꿀 수 없습니다.',
-  fRestricted: '제한 필드 (권한이 있는 사용자에게만 보임)',
-  fActive: '사용',
-  fSort: '표시 순서',
-  fSortInvalid: '표시 순서는 정수로 입력하세요.',
-  cancel: '취소',
-  save: '저장',
-  create: '만들기',
-  saving: '저장 중…',
-};
 
 interface FieldRow {
   id: string;
@@ -67,6 +28,7 @@ export default function CustomFieldsPage() {
 }
 
 function CustomFieldsInner() {
+  const T = useT(TEXT);
   const { can } = useShell();
   const [rows, setRows] = useState<FieldRow[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -159,6 +121,7 @@ function CustomFieldsInner() {
 }
 
 function FieldForm({ field, onClose, onSaved }: { field: FieldRow | null; onClose: () => void; onSaved: () => void }) {
+  const T = useT(TEXT);
   const [key, setKey] = useState(field?.key ?? '');
   const [labelText, setLabelText] = useState(field?.label ?? '');
   const [dataType, setDataType] = useState<DataType>(field?.data_type ?? 'text');

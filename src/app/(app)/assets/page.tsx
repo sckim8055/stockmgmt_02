@@ -6,56 +6,20 @@ import type { AssetState } from '@/lib/assets/transitions';
 import { RequireCompany, useShell } from '../../shell';
 import { api, Badge, Button, EmptyRow, ErrorText, PageHeader, smallInput, Table, td } from '../../ui';
 import { CreateAssetDialog } from './create-dialog';
-import { STATE_LABEL, STATE_SUBSTATES, SUBSTATE_LABEL } from './labels';
-import { fmtPrice, isOverdue, listOf, modelLabel, PersonPicker, StateBadge, useDebounced, useList, type PersonRef } from './shared';
+import { STATE_SUBSTATES, useAssetLabels } from './labels';
+import { isOverdue, listOf, modelLabel, PersonPicker, StateBadge, useDebounced, useList, type PersonRef } from './shared';
 import { SORT_KEYS, type AssetPage, type CategoryOption, type DepartmentOption, type ModelOption, type SortKey } from './types';
+import { useT } from '../../i18n';
+import { TEXT } from './page.text';
+import { useFmt } from '../../i18n/format';
 
 const PAGE_SIZE = 50;
-
-const T = {
-  title: '자산',
-  add: '자산 등록',
-  loading: '불러오는 중…',
-  empty: '조건에 맞는 자산이 없습니다.',
-  filterQ: '검색',
-  filterQPlaceholder: '태그·시리얼·모델·위치·보유자',
-  filterState: '상태',
-  filterCategory: '카테고리',
-  filterModel: '모델',
-  filterDept: '관리 부서',
-  filterHolder: '보유자',
-  includeVoid: '등록 취소 포함',
-  overdueOnly: '연체만',
-  overdueOnlyHint: '사용 중이면서 반납 기한이 지난 자산만 봅니다.',
-  all: '전체',
-  inactive: '(사용 안 함)',
-  reset: '조건 초기화',
-  colTag: '자산 태그',
-  colModel: '모델',
-  colCategory: '카테고리',
-  colSerial: '시리얼',
-  colState: '상태',
-  colHolder: '보유자',
-  colDept: '관리 부서',
-  colLocation: '위치',
-  colDue: '반납 기한',
-  colPrice: '구매가',
-  colSupplier: '공급업체',
-  overdue: '기한 지남',
-  sortAsc: '오름차순 정렬됨',
-  sortDesc: '내림차순 정렬됨',
-  created: (tag: string) => `자산 ${tag} 을(를) 등록했습니다.`,
-  openCreated: '상세 보기',
-  total: (n: number) => `총 ${n.toLocaleString('ko-KR')}대`,
-  page: (p: number, last: number) => `${p} / ${last} 쪽`,
-  prev: '이전',
-  next: '다음',
-};
 
 /** URL 에서 읽어 API 로 그대로 넘기는 조건. holderName 은 화면 표시용이라 넘기지 않는다. */
 const API_KEYS = ['q', 'state', 'substate', 'categoryId', 'modelId', 'departmentId', 'holderPersonId', 'includeVoid', 'overdue', 'sort', 'order', 'page'] as const;
 
 export default function AssetsPage() {
+  const T = useT(TEXT);
   return (
     <RequireCompany>
       {/* useSearchParams 는 Suspense 경계 안에서 써야 한다(Next.js 빌드 규칙). */}
@@ -67,6 +31,9 @@ export default function AssetsPage() {
 }
 
 function AssetsInner() {
+  const F = useFmt();
+  const L = useAssetLabels();
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const router = useRouter();
   const sp = useSearchParams();
@@ -186,10 +153,10 @@ function AssetsInner() {
               style={{ ...smallInput, width: 'auto', margin: 0 }}
             >
               <option value="">{T.all}</option>
-              {(Object.keys(STATE_LABEL) as AssetState[]).map((s) => [
-                <option key={s} value={s}>{STATE_LABEL[s]}</option>,
+              {(Object.keys(L.state) as AssetState[]).map((s) => [
+                <option key={s} value={s}>{L.state[s]}</option>,
                 ...STATE_SUBSTATES[s].map((sub) => (
-                  <option key={`${s}:${sub}`} value={`${s}:${sub}`}>{`${STATE_LABEL[s]} · ${SUBSTATE_LABEL[sub]}`}</option>
+                  <option key={`${s}:${sub}`} value={`${s}:${sub}`}>{`${L.state[s]} · ${L.substate[sub]}`}</option>
                 )),
               ])}
             </select>
@@ -281,7 +248,7 @@ function AssetsInner() {
                   {a.due_date ?? ''}
                   {a.state === 'IN_USE' && isOverdue(a.due_date) ? <> <Badge tone="red">{T.overdue}</Badge></> : null}
                 </td>
-                {showPrice ? <td style={{ ...td, textAlign: 'right' }}>{fmtPrice(a.purchase_price)}</td> : null}
+                {showPrice ? <td style={{ ...td, textAlign: 'right' }}>{F.optNum(a.purchase_price)}</td> : null}
                 {showSupplier ? <td style={td}>{a.supplier ?? ''}</td> : null}
               </tr>
             ))}

@@ -4,48 +4,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useId, useState, type ReactNode } from 'react';
-import { api, Button, ErrorText, USER_TYPE_LABEL, type UserType, setExpectedCompany } from './ui';
-
-const T = {
-  product: 'StockMgmt',
-  loading: '불러오는 중…',
-  loadFailed: '사용자 정보를 불러오지 못했습니다.',
-  retry: '다시 시도',
-  logout: '로그아웃',
-  company: '기업',
-  companyOwn: '소속 기업',
-  actingCompany: '작업 기업',
-  noCompany: '선택 해제 (기업 없음)',
-  inactive: '(비활성)',
-  companiesFailed: '기업 목록을 불러오지 못했습니다.',
-  switching: '전환 중…',
-  navHome: '홈',
-  navUsers: '사용자 관리',
-  navRoles: '역할 관리',
-  navCompanies: '기업 관리',
-  navAssets: '자산',
-  navPeripheralGroup: '주변기기',
-  navPeripheralStock: '재고',
-  navPeripheralLoans: '대여 현황',
-  navImport: '엑셀 업로드',
-  navMasterGroup: '기준 정보',
-  navCategories: '카테고리',
-  navModels: '모델',
-  navDepartments: '부서',
-  navPersons: '직원',
-  navCustomFields: '사용자 지정 필드',
-  navAdminGroup: '관리',
-  navAlertGroup: '알림',
-  navAlertInbox: '알림함',
-  navThresholds: '한계 수량',
-  navMailGroup: '메일',
-  navMailSchedules: '메일 일정',
-  navMailLogs: '발송 기록',
-  unreadBadge: (n: number) => (n > 99 ? '99+' : String(n)),
-  unreadLabel: (n: number) => `읽지 않은 알림 ${n}건`,
-  navLabel: '주 메뉴',
-  pickCompany: '상단 바에서 작업할 기업을 먼저 선택하세요.',
-};
+import { api, Button, ErrorText, useUserTypeLabel, type UserType, setExpectedCompany } from './ui';
+import { useLangControl } from './i18n';
+import { LangSwitcher } from './i18n/switcher';
+import { useT } from './i18n';
+import { TEXT } from './shell.text';
 
 export interface Me {
   userId: string;
@@ -95,14 +58,16 @@ const ShellContext = createContext<ShellValue | null>(null);
 
 export function useShell(): ShellValue {
   const v = useContext(ShellContext);
-  if (!v) throw new Error('useShell 은 AppShell 안에서만 쓴다.');
+  if (!v) throw new Error('useShell must be used inside AppShell'); // 개발자 오류(화면 문구가 아니다)
   return v;
 }
 
 type LoadState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; me: Me; perms: MyPermissions };
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const T = useT(TEXT);
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const { adoptUserLang } = useLangControl();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyError, setCompanyError] = useState('');
   // 기업을 바꾸면 이 값을 올려 아래 화면을 새로 그린다(각 화면이 데이터를 다시 불러온다).
@@ -128,6 +93,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       return;
     }
     const me = meRes.data.user;
+    // 사용자의 언어를 기본값으로 쓴다(이 브라우저에서 고른 언어가 있으면 그것이 우선).
+    adoptUserLang(me.lang);
     if (me.mustChangePassword) {
       window.location.href = '/change-password';
       return;
@@ -139,7 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
     setState({ kind: 'ready', me, perms: permRes.data });
     if (me.userType === 'SYSTEM_ADMIN') await loadCompanies();
-  }, [loadCompanies]);
+  }, [loadCompanies, adoptUserLang]);
 
   const loadUnread = useCallback(async () => {
     // pageSize=1: 건수만 필요하다(알림 내용은 알림함 화면이 불러온다).
@@ -219,7 +186,9 @@ function TopBar({
   companyError: string;
   onCompanyChanged: () => Promise<void>;
 }) {
+  const T = useT(TEXT);
   const selectId = useId();
+  const userTypeLabel = useUserTypeLabel();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -273,8 +242,9 @@ function TopBar({
       ) : null}
 
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 13 }}>
+        <LangSwitcher dark />
         <span>
-          {me.displayName} <span style={{ color: '#9ca3af' }}>({me.loginId} · {USER_TYPE_LABEL[me.userType] ?? me.userType})</span>
+          {me.displayName} <span style={{ color: '#9ca3af' }}>({me.loginId} · {userTypeLabel[me.userType] ?? me.userType})</span>
         </span>
         <Button
           small
@@ -308,8 +278,9 @@ interface NavSection {
 }
 
 function SideNav({ me, can, unread }: { me: Me; can: (resource: string, operation: string) => boolean; unread: number | null }) {
+  const T = useT(TEXT);
   const pathname = usePathname();
-  const main: NavItem[] = [{ href: '/', label: T.navHome }];
+  const main: NavItem[] = [{ href: '/', label: can('dashboard', 'read') ? T.navDashboard : T.navHome }];
   if (can('asset.item', 'read')) main.push({ href: '/assets', label: T.navAssets });
   if (can('master.person', 'import') || can('asset.item', 'import') || can('peripheral.receive', 'execute')) {
     main.push({ href: '/import', label: T.navImport });
@@ -334,6 +305,10 @@ function SideNav({ me, can, unread }: { me: Me; can: (resource: string, operatio
   if (can('mail.schedule', 'read')) mail.push({ href: '/mail/schedules', label: T.navMailSchedules });
   if (can('mail.log', 'read')) mail.push({ href: '/mail/logs', label: T.navMailLogs });
 
+  const history: NavItem[] = [];
+  if (can('history.stock', 'read')) history.push({ href: '/history/stock', label: T.navStockHistory });
+  if (can('history.audit', 'read')) history.push({ href: '/history/audit', label: T.navAudit });
+
   const admin: NavItem[] = [];
   if (can('admin.user', 'read')) admin.push({ href: '/admin/users', label: T.navUsers });
   if (can('admin.role', 'read')) admin.push({ href: '/admin/roles', label: T.navRoles });
@@ -344,6 +319,7 @@ function SideNav({ me, can, unread }: { me: Me; can: (resource: string, operatio
     { title: T.navPeripheralGroup, items: peripheral },
     { title: T.navAlertGroup, items: alert },
     { title: T.navMailGroup, items: mail },
+    { title: T.navHistoryGroup, items: history },
     { title: T.navMasterGroup, items: master },
     { title: T.navAdminGroup, items: admin },
   ].filter((sec) => sec.items.length > 0);
@@ -394,6 +370,7 @@ function SideNav({ me, can, unread }: { me: Me; can: (resource: string, operatio
 
 /** 시스템 관리자가 기업을 고르지 않았으면 안내하고, 그렇지 않으면 children 을 그린다. */
 export function RequireCompany({ children }: { children: ReactNode }) {
+  const T = useT(TEXT);
   const { me, effectiveCompanyId } = useShell();
   if (me.userType === 'SYSTEM_ADMIN' && !effectiveCompanyId) {
     return (

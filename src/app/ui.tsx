@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
+import { getActiveLang, useT } from './i18n';
+import { TEXT } from './ui.text';
 
 // 0단계의 임시 화면 부품. 화면 디자인은 5단계에서 기존 스타일로 교체한다.
 export const card: CSSProperties = {
@@ -29,30 +31,40 @@ export function ErrorText({ children }: { children: ReactNode }) {
   return <p role="alert" style={{ color: '#b91c1c', fontSize: 14 }}>{children}</p>;
 }
 
-export async function postJson(url: string, body: unknown): Promise<{ ok: boolean; data: any }> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  let data: any = null;
+/**
+ * 로그인 전 화면(로그인·비밀번호 변경)의 POST. api() 와 달리 401 에서 로그인 화면으로 보내지 않는다.
+ * 실패하면 서버의 메시지를 돌려주고, 메시지가 없으면 null(화면이 자기 문구를 쓴다)이다.
+ */
+export async function postJson<T>(url: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; message: string | null }> {
+  let res: Response;
   try {
-    data = await res.json();
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, message: networkError() };
+  }
+  let raw: unknown = null;
+  try {
+    raw = await res.json();
   } catch {
     /* 본문 없음 */
   }
-  return { ok: res.ok, data };
+  if (res.ok) return { ok: true, data: raw as T };
+  const e = readError(raw);
+  return { ok: false, message: e && e.message !== fallbackError() ? e.message : null };
 }
 
 // ───────────────────────── 1단계 관리 화면 공용 부품 ─────────────────────────
 
 export type UserType = 'SYSTEM_ADMIN' | 'COMPANY_ADMIN' | 'COMPANY_USER';
 
-export const USER_TYPE_LABEL: Record<UserType, string> = {
-  SYSTEM_ADMIN: '시스템 관리자',
-  COMPANY_ADMIN: '기업 관리자',
-  COMPANY_USER: '기업 사용자',
-};
+/** 계정 유형의 화면 이름(현재 언어) */
+export function useUserTypeLabel(): Record<UserType, string> {
+  return useT(TEXT).userType;
+}
 
 export interface ApiError {
   code: string;
@@ -70,7 +82,9 @@ export type ApiResult<T> =
       raw?: unknown;
     };
 
-const FALLBACK_ERROR = '요청을 처리하지 못했습니다.';
+// 서버가 메시지를 주지 않았을 때의 문구. 부를 때의 화면 언어로 만든다.
+const fallbackError = () => TEXT[getActiveLang()].fallbackError;
+const networkError = () => TEXT[getActiveLang()].network;
 
 // 이 화면이 보고 있는 기업. 기업 데이터 API를 부를 때 확인용 헤더로 보낸다.
 // 시스템 관리자가 다른 탭에서 기업을 바꾸면 서버가 409(COMPANY_CHANGED)로 거부해,
@@ -90,7 +104,7 @@ function readError(raw: unknown): ApiError | null {
   const message = (e as { message?: unknown }).message;
   return {
     code: typeof code === 'string' ? code : 'UNKNOWN',
-    message: typeof message === 'string' && message ? message : FALLBACK_ERROR,
+    message: typeof message === 'string' && message ? message : fallbackError(),
   };
 }
 
@@ -112,7 +126,7 @@ export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: s
       cache: 'no-store',
     });
   } catch {
-    return { ok: false, status: 0, error: { code: 'NETWORK', message: '서버에 연결할 수 없습니다.' }, redirected: false };
+    return { ok: false, status: 0, error: { code: 'NETWORK', message: networkError() }, redirected: false };
   }
   let raw: unknown = null;
   try {
@@ -122,7 +136,7 @@ export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: s
   }
   if (res.ok) return { ok: true, status: res.status, data: raw as T };
 
-  const error = readError(raw) ?? { code: 'HTTP_' + res.status, message: FALLBACK_ERROR };
+  const error = readError(raw) ?? { code: 'HTTP_' + res.status, message: fallbackError() };
   if (res.status === 401) {
     window.location.href = '/login';
     return { ok: false, status: res.status, error, redirected: true };
@@ -141,7 +155,7 @@ function companyHeader(url: string): Record<string, string> {
   return expectedCompany && !COMPANY_NEUTRAL.some((p) => url.startsWith(p)) ? { 'x-expected-company': expectedCompany } : {};
 }
 
-const NETWORK_FAILURE = { ok: false, status: 0, error: { code: 'NETWORK', message: '서버에 연결할 수 없습니다.' }, redirected: false } as const;
+const networkFailure = () => ({ ok: false, status: 0, error: { code: 'NETWORK', message: networkError() }, redirected: false }) as const;
 
 async function readJson(res: Response): Promise<unknown> {
   try {
@@ -153,7 +167,7 @@ async function readJson(res: Response): Promise<unknown> {
 
 /** 실패 응답을 api() 와 같은 형식으로 바꾼다. */
 function failure(status: number, raw: unknown): Extract<ApiResult<never>, { ok: false }> {
-  const error = readError(raw) ?? { code: 'HTTP_' + status, message: FALLBACK_ERROR };
+  const error = readError(raw) ?? { code: 'HTTP_' + status, message: fallbackError() };
   if (status === 401) {
     window.location.href = '/login';
     return { ok: false, status, error, redirected: true };
@@ -176,7 +190,7 @@ export async function apiUpload<T>(url: string, file: Blob): Promise<ApiResult<T
       cache: 'no-store',
     });
   } catch {
-    return NETWORK_FAILURE;
+    return networkFailure();
   }
   const raw = await readJson(res);
   return res.ok ? { ok: true, status: res.status, data: raw as T } : failure(res.status, raw);
@@ -191,7 +205,7 @@ export async function apiDownload(url: string, fileName: string): Promise<ApiRes
     if (!res.ok) return failure(res.status, await readJson(res));
     blob = await res.blob();
   } catch {
-    return NETWORK_FAILURE;
+    return networkFailure();
   }
   const href = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -399,6 +413,7 @@ export function Modal({
   footer?: ReactNode;
   width?: number;
 }) {
+  const T = useT(TEXT);
   const titleId = useId();
   const boxRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -434,7 +449,7 @@ export function Modal({
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #eef0f3' }}>
           <h2 id={titleId} style={{ fontSize: 17, margin: 0 }}>{title}</h2>
-          <Button variant="link" small onClick={onClose} aria-label="닫기">닫기</Button>
+          <Button variant="link" small onClick={onClose} aria-label={T.close}>{T.close}</Button>
         </div>
         <div style={{ padding: '14px 18px' }}>{children}</div>
         {footer ? (
@@ -461,6 +476,7 @@ export function ConfirmDialog({
   onConfirm: () => Promise<string | null>;
   onClose: () => void;
 }) {
+  const T = useT(TEXT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return (
@@ -470,7 +486,7 @@ export function ConfirmDialog({
       width={440}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>취소</Button>
+          <Button onClick={onClose} disabled={busy}>{T.cancel}</Button>
           <Button
             variant={danger ? 'danger' : 'primary'}
             disabled={busy}
@@ -482,7 +498,7 @@ export function ConfirmDialog({
               if (err) setError(err);
             }}
           >
-            {busy ? '처리 중…' : confirmLabel}
+            {busy ? T.processing : confirmLabel}
           </Button>
         </>
       }
@@ -510,13 +526,14 @@ export function TempPasswordDialog({
   password: string;
   onClose: () => void;
 }) {
+  const T = useT(TEXT);
   const [copied, setCopied] = useState('');
   const pwId = useId();
   return (
-    <Modal title={title} onClose={onClose} width={460} footer={<Button variant="primary" onClick={onClose}>확인했습니다</Button>}>
+    <Modal title={title} onClose={onClose} width={460} footer={<Button variant="primary" onClick={onClose}>{T.tempAck}</Button>}>
       {extra}
-      <p style={{ fontSize: 14, margin: '0 0 6px' }}>로그인 ID: <strong>{loginId}</strong></p>
-      <label htmlFor={pwId} style={{ fontSize: 13, color: '#4b5563' }}>임시 비밀번호</label>
+      <p style={{ fontSize: 14, margin: '0 0 6px' }}>{T.tempLoginId}: <strong>{loginId}</strong></p>
+      <label htmlFor={pwId} style={{ fontSize: 13, color: '#4b5563' }}>{T.tempPassword}</label>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '4px 0 12px' }}>
         <input
           id={pwId}
@@ -532,20 +549,20 @@ export function TempPasswordDialog({
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(password);
-              setCopied('복사했습니다.');
+              setCopied(T.copied);
             } catch {
-              setCopied('복사하지 못했습니다. 직접 선택해 복사하세요.');
+              setCopied(T.copyFailed);
             }
           }}
         >
-          복사
+          {T.copy}
         </Button>
       </div>
       {copied ? <p role="status" style={{ fontSize: 13, color: '#166534', margin: '0 0 8px' }}>{copied}</p> : null}
       <div role="note" style={{ background: '#fef6e4', color: '#92400e', borderRadius: 6, padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}>
-        이 비밀번호는 지금 한 번만 표시되며 다시 볼 수 없습니다. 안전한 방법으로 전달하세요.
+        {T.tempOnce}
         <br />
-        임시 비밀번호는 72시간 동안 유효하고, 첫 로그인 때 새 비밀번호로 변경해야 합니다.
+        {T.tempValidity}
       </div>
     </Modal>
   );

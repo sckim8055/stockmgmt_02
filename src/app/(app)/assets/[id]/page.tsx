@@ -6,45 +6,15 @@ import { ACTION_RESOURCE, type AssetAction } from '@/lib/assets/transitions';
 import { RequireCompany, useShell } from '../../../shell';
 import { api, Badge, Button, ErrorText, Notice } from '../../../ui';
 import { allowedActions, DESTRUCTIVE } from '../actions';
-import { ACTION_LABEL } from '../labels';
-import { customDisplay, fmtDateTime, fmtPrice, isOverdue, listOf, modelLabel, StateBadge, useList } from '../shared';
+import { useAssetLabels } from '../labels';
+import { useCustomDisplay, isOverdue, listOf, modelLabel, StateBadge, useList } from '../shared';
 import type { AssetRow, CustomFieldDef } from '../types';
 import { ActionDialog } from './action-dialog';
 import { EditAssetDialog } from './edit-dialog';
 import { AssetHistory } from './history';
-
-const T = {
-  back: '← 자산 목록',
-  loading: '불러오는 중…',
-  notFound: '자산을 찾을 수 없습니다.',
-  notFoundHint: '삭제되었거나, 다른 기업 또는 볼 수 없는 부서의 자산일 수 있습니다.',
-  edit: '수정',
-  actions: '처리',
-  saved: '저장했습니다.',
-  done: (a: string) => `${a} 처리했습니다.`,
-  conflict: (m: string) => `${m} 최신 상태를 다시 불러왔습니다.`,
-  secBasic: '기본 정보',
-  secHolding: '보유/위치',
-  secPurchase: '구매 정보',
-  secCustom: '사용자 지정 필드',
-  tag: '자산 태그',
-  model: '모델',
-  category: '카테고리',
-  serial: '시리얼',
-  state: '상태',
-  warranty: '보증 만료일',
-  createdAt: '등록일',
-  updatedAt: '최종 수정',
-  holder: '보유자',
-  dept: '관리 부서',
-  location: '위치',
-  due: '반납 기한',
-  overdue: '기한 지남',
-  purchaseDate: '구매일',
-  price: '구매가',
-  supplier: '공급업체',
-  customNone: '입력된 값이 없습니다.',
-};
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
+import { useFmt } from '../../../i18n/format';
 
 type Load = { kind: 'loading' } | { kind: 'notfound' } | { kind: 'error'; message: string } | { kind: 'ready'; asset: AssetRow };
 
@@ -58,6 +28,9 @@ export default function AssetDetailPage() {
 }
 
 function AssetDetail({ assetId }: { assetId: string }) {
+  const F = useFmt();
+  const L = useAssetLabels();
+  const T = useT(TEXT);
   const { can } = useShell();
   const [state, setState] = useState<Load>({ kind: 'loading' });
   const [historyKey, setHistoryKey] = useState(0);
@@ -65,6 +38,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
   const [acting, setActing] = useState<AssetAction | null>(null);
   const [notice, setNotice] = useState('');
   const [problem, setProblem] = useState('');
+  const customDisplay = useCustomDisplay();
   const fields = useList<CustomFieldDef>(can('master.custom_field', 'read') ? '/api/master/custom-fields' : null, 'fields');
 
   const load = useCallback(async () => {
@@ -134,7 +108,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
         <div role="group" aria-label={T.actions} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
           {actions.map((x) => (
             <Button key={x} small variant={DESTRUCTIVE.has(x) ? 'danger' : 'secondary'} onClick={() => { reset(); setActing(x); }}>
-              {ACTION_LABEL[x]}
+              {L.action[x]}
             </Button>
           ))}
         </div>
@@ -151,8 +125,8 @@ function AssetDetail({ assetId }: { assetId: string }) {
           <Info label={T.serial}>{a.serial_number}</Info>
           <Info label={T.state}><StateBadge state={a.state} substate={a.substate} /></Info>
           <Info label={T.warranty}>{a.warranty_end}</Info>
-          <Info label={T.createdAt}>{fmtDateTime(a.created_at)}</Info>
-          <Info label={T.updatedAt}>{fmtDateTime(a.updated_at)}</Info>
+          <Info label={T.createdAt}>{F.dateTime(a.created_at)}</Info>
+          <Info label={T.updatedAt}>{F.dateTime(a.updated_at)}</Info>
         </Section>
         <Section title={T.secHolding}>
           <Info label={T.holder}>
@@ -177,7 +151,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
         <Section title={T.secPurchase}>
           <Info label={T.purchaseDate}>{a.purchase_date}</Info>
           {/* 권한이 없으면 서버가 키 자체를 뺀다. 키가 있을 때만 그린다. */}
-          {'purchase_price' in a ? <Info label={T.price}>{fmtPrice(a.purchase_price)}</Info> : null}
+          {'purchase_price' in a ? <Info label={T.price}>{F.optNum(a.purchase_price)}</Info> : null}
           {'supplier' in a ? <Info label={T.supplier}>{a.supplier}</Info> : null}
         </Section>
         <Section title={T.secCustom}>
@@ -213,7 +187,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
           action={acting}
           onClose={() => setActing(null)}
           onDone={() => {
-            setNotice(T.done(ACTION_LABEL[acting]));
+            setNotice(T.done(L.action[acting]));
             setActing(null);
             void load();
           }}

@@ -16,46 +16,10 @@ import {
   td,
   TempPasswordDialog,
 } from '../../../ui';
-
-const T = {
-  title: '기업 관리',
-  noAccess: '권한이 없습니다.',
-  add: '기업 추가',
-  loading: '불러오는 중…',
-  empty: '등록된 기업이 없습니다.',
-  colCode: '기업코드',
-  colName: '이름',
-  colTz: '시간대',
-  colLocale: '언어',
-  colStatus: '상태',
-  colCreated: '등록일',
-  active: '활성',
-  inactive: '비활성',
-  formTitle: '기업 추가',
-  fCode: '기업코드',
-  fCodeHint: '영문·숫자·-·_ 2~32자. 사용자가 로그인할 때 입력합니다.',
-  fName: '기업 이름',
-  fTz: '시간대 (선택)',
-  fTzHint: '예: Asia/Seoul. 비워 두면 서버 기본값을 씁니다.',
-  fLocale: '기본 언어 (선택)',
-  fLocaleDefault: '서버 기본값',
-  adminSection: '첫 기업 관리자 계정',
-  fAdminLogin: '관리자 로그인 ID',
-  fAdminLoginHint: '영문·숫자·._@- 3~64자',
-  fAdminName: '관리자 이름',
-  fAdminEmail: '관리자 이메일 (선택)',
-  cancel: '취소',
-  create: '만들기',
-  saving: '만드는 중…',
-  createdTitle: '기업을 만들었습니다',
-  createdNote: (code: string) => `기업코드 ${code} 의 첫 기업 관리자 계정입니다. 로그인할 때 기업코드와 함께 입력합니다.`,
-};
-
-const LOCALES: { value: 'ko' | 'en' | 'zh'; label: string }[] = [
-  { value: 'ko', label: '한국어' },
-  { value: 'en', label: 'English' },
-  { value: 'zh', label: '中文' },
-];
+import { isLang, LANGS, useT } from '../../../i18n';
+import { LANG_NAME } from '../../../i18n/langs.text';
+import { TEXT } from './page.text';
+import { useFmt } from '../../../i18n/format';
 
 interface CreateResult {
   companyId: string;
@@ -64,12 +28,15 @@ interface CreateResult {
 }
 
 export default function CompaniesPage() {
+  const T = useT(TEXT);
   const { me } = useShell();
   if (me.userType !== 'SYSTEM_ADMIN') return <Notice>{T.noAccess}</Notice>;
   return <CompaniesInner />;
 }
 
 function CompaniesInner() {
+  const F = useFmt();
+  const T = useT(TEXT);
   const { reloadCompanies } = useShell();
   const [companies, setCompanies] = useState<Company[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -102,9 +69,9 @@ function CompaniesInner() {
               <td style={td}><code>{c.code}</code></td>
               <td style={td}>{c.name}</td>
               <td style={td}>{c.timezone}</td>
-              <td style={td}>{c.locale}</td>
+              <td style={td}>{isLang(c.locale) ? LANG_NAME[c.locale] : c.locale}</td>
               <td style={td}>{c.is_active ? <Badge tone="green">{T.active}</Badge> : <Badge tone="gray">{T.inactive}</Badge>}</td>
-              <td style={td}>{formatDate(c.created_at)}</td>
+              <td style={td}>{formatDate(c.created_at, F.locale)}</td>
             </tr>
           ))}
         </Table>
@@ -135,12 +102,13 @@ function CompaniesInner() {
   );
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('ko-KR');
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(locale);
 }
 
 function CompanyForm({ onClose, onCreated }: { onClose: () => void; onCreated: (code: string, loginId: string, password: string) => void }) {
+  const T = useT(TEXT);
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('');
@@ -183,7 +151,7 @@ function CompanyForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
           {(id) => (
             <select id={id} style={smallInput} value={locale} onChange={(e) => setLocale(e.target.value as '' | 'ko' | 'en' | 'zh')}>
               <option value="">{T.fLocaleDefault}</option>
-              {LOCALES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+              {LANGS.map((l) => <option key={l} value={l}>{LANG_NAME[l]}</option>)}
             </select>
           )}
         </LabeledField>

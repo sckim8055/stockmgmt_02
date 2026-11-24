@@ -17,104 +17,9 @@ import {
   td,
   th,
 } from '../../../ui';
-
-const T = {
-  title: '역할 관리',
-  add: '역할 추가',
-  loading: '불러오는 중…',
-  empty: '등록된 역할이 없습니다.',
-  colName: '이름',
-  colDesc: '설명',
-  colStatus: '상태',
-  colUsers: '사용자 수',
-  colActions: '작업',
-  active: '활성',
-  inactive: '비활성',
-  edit: '수정',
-  activate: '활성화',
-  deactivate: '비활성화',
-  remove: '삭제',
-  notMine: '내가 갖지 않은 권한이 포함된 역할이라 관리할 수 없습니다.',
-  confirmActivateTitle: '역할 활성화',
-  confirmActivate: (n: string) => `"${n}" 역할을 활성화합니다. 이 역할이 배정된 사용자가 역할의 권한을 다시 갖게 됩니다.`,
-  confirmDeactivateTitle: '역할 비활성화',
-  confirmDeactivate: (n: string) => `"${n}" 역할을 비활성화합니다. 이 역할이 배정된 사용자는 역할의 권한을 즉시 잃습니다.`,
-  confirmDeleteTitle: '역할 삭제',
-  confirmDelete: (n: string) => `"${n}" 역할을 삭제합니다. 사용자에게 배정된 역할은 삭제할 수 없습니다.`,
-  saved: '저장했습니다.',
-  formCreate: '역할 추가',
-  formEdit: (n: string) => `역할 수정 — ${n}`,
-  fName: '이름',
-  fDesc: '설명 (선택)',
-  fMatrix: '권한',
-  fMatrixHint: '체크한 동작만 허용됩니다. 내가 갖지 않은 권한은 줄 수 없어 비활성으로 표시됩니다.',
-  fMatrixHintAll: '체크한 동작만 허용됩니다.',
-  fNotMineWarn: '이 역할에는 내가 갖지 않은 권한이 들어 있어 저장할 수 없습니다.',
-  resourcesFailed: '권한 목록을 불러오지 못했습니다.',
-  colResource: '화면 / 항목',
-  colAll: '전체',
-  rowAll: (r: string) => `${r} 전체`,
-  cellLabel: (r: string, op: string) => `${r} ${op}`,
-  other: '기타',
-  cancel: '취소',
-  save: '저장',
-  create: '만들기',
-  saving: '저장 중…',
-};
-
-/** 동작 열. 순서는 화면 표시 순서다. */
-const OPERATIONS = ['read', 'create', 'update', 'delete', 'activate', 'deactivate', 'import', 'export', 'execute'] as const;
-const OP_LABEL: Record<(typeof OPERATIONS)[number], string> = {
-  read: '조회',
-  create: '등록',
-  update: '수정',
-  delete: '삭제',
-  activate: '활성화',
-  deactivate: '비활성화',
-  import: '가져오기',
-  export: '내보내기',
-  execute: '실행',
-};
-
-/** 리소스 코드의 화면 이름. 목록에 없는 코드는 코드를 그대로 보여 준다. */
-const RESOURCE_LABEL: Record<string, string> = {
-  'menu.dashboard': '대시보드',
-  'menu.asset': '자산',
-  'menu.peripheral': '주변기기',
-  'menu.master': '기준정보',
-  'menu.alert': '알림',
-  'menu.mail': '메일',
-  'menu.history': '이력',
-  'menu.admin': '관리',
-  dashboard: '대시보드',
-  'asset.item': '자산 목록',
-  'asset.assign': '자산 배정',
-  'asset.maintain': '자산 유지보수',
-  'asset.retire': '자산 폐기',
-  'peripheral.stock': '주변기기 재고',
-  'peripheral.receive': '입고',
-  'peripheral.issue': '출고',
-  'peripheral.adjust': '재고 조정',
-  'peripheral.loan': '대여 현황',
-  'master.category': '분류',
-  'master.model': '모델',
-  'master.department': '부서',
-  'master.person': '직원',
-  'master.custom_field': '사용자 정의 항목',
-  threshold: '재고 기준치',
-  'alert.inbox': '알림함',
-  'mail.schedule': '메일 일정',
-  'mail.log': '메일 발송 기록',
-  'history.stock': '재고 이력',
-  'history.audit': '감사 로그',
-  'admin.user': '사용자 관리',
-  'admin.user.password': '임시 비밀번호 발급',
-  'admin.role': '역할 관리',
-  'asset.item.purchase_price': '구매 가격',
-  'asset.item.supplier': '공급업체',
-  'asset.item.custom_restricted': '제한 사용자 정의 항목',
-};
-const label = (code: string) => RESOURCE_LABEL[code] ?? code;
+import { OPERATIONS, useResourceLabels } from '../resource-labels';
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
 
 interface AclEntry {
   resource: string;
@@ -172,6 +77,7 @@ export default function RolesPage() {
 }
 
 function RolesInner() {
+  const T = useT(TEXT);
   const { perms, can } = useShell();
   const [roles, setRoles] = useState<RoleRow[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -307,6 +213,8 @@ function RoleForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const RL = useResourceLabels();
+  const T = useT(TEXT);
   const { perms } = useShell();
   const [name, setName] = useState(role?.name ?? '');
   const [description, setDescription] = useState(role?.description ?? '');
@@ -360,7 +268,7 @@ function RoleForm({
   function renderRow(r: ResourceRow, depth: 1 | 2) {
     const rowGrantable = r.operations.filter((op) => grantable(r.code, op));
     const allOn = rowGrantable.length > 0 && rowGrantable.every((op) => selected.has(key(r.code, op)));
-    const rowName = label(r.code);
+    const rowName = RL.label(r.code);
     return (
       <tr key={r.code}>
         <th scope="row" style={{ ...td, textAlign: 'left', fontWeight: depth === 1 ? 500 : 400, paddingLeft: depth === 1 ? 18 : 38, whiteSpace: 'nowrap' }}>
@@ -386,7 +294,7 @@ function RoleForm({
             <td key={op} style={{ ...td, textAlign: 'center' }}>
               <input
                 type="checkbox"
-                aria-label={T.cellLabel(rowName, OP_LABEL[op])}
+                aria-label={T.cellLabel(rowName, RL.op[op])}
                 checked={selected.has(k)}
                 disabled={!grantable(r.code, op)}
                 onChange={(e) => toggle(k, e.target.checked)}
@@ -421,7 +329,7 @@ function RoleForm({
                 <th scope="col" style={{ ...th, position: 'sticky', top: 0 }}>{T.colResource}</th>
                 <th scope="col" style={{ ...th, position: 'sticky', top: 0, textAlign: 'center' }}>{T.colAll}</th>
                 {OPERATIONS.map((op) => (
-                  <th key={op} scope="col" style={{ ...th, position: 'sticky', top: 0, textAlign: 'center' }}>{OP_LABEL[op]}</th>
+                  <th key={op} scope="col" style={{ ...th, position: 'sticky', top: 0, textAlign: 'center' }}>{RL.op[op]}</th>
                 ))}
               </tr>
             </thead>
@@ -430,7 +338,7 @@ function RoleForm({
                 <Fragment key={g.menu?.code ?? '__other'}>
                   <tr>
                     <th scope="rowgroup" colSpan={OPERATIONS.length + 2} style={{ ...td, textAlign: 'left', background: '#f7f8fa', fontWeight: 700 }}>
-                      {g.menu ? label(g.menu.code) : T.other}
+                      {g.menu ? RL.label(g.menu.code) : T.other}
                     </th>
                   </tr>
                   {g.pages.map(({ page, fields }) => (

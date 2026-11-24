@@ -1,0 +1,47 @@
+// shared.tsx 의 화면 문구. 세 언어의 키는 같아야 한다(dict 가 컴파일할 때 검사한다).
+import { dict } from '../../i18n';
+
+export const TEXT = dict({
+  ko: {
+    searching: '찾는 중…',
+    noPerson: '맞는 직원이 없습니다.',
+    personPlaceholder: '이름·사번으로 찾기',
+    clear: '선택 해제',
+    inactive: '(퇴사)',
+    filterPlaceholder: '입력해서 목록 좁히기',
+    noOption: '맞는 항목이 없습니다.',
+    choose: '선택하세요',
+    boolUnset: '입력 안 함',
+    boolYes: '예',
+    boolNo: '아니오',
+    restricted: '(제한)',
+  },
+  en: {
+    searching: 'Searching…',
+    noPerson: 'No matching employees.',
+    personPlaceholder: 'Search by name or employee no.',
+    clear: 'Clear',
+    inactive: '(left)',
+    filterPlaceholder: 'Type to filter the list',
+    noOption: 'No matching items.',
+    choose: 'Select…',
+    boolUnset: 'Not set',
+    boolYes: 'Yes',
+    boolNo: 'No',
+    restricted: '(restricted)',
+  },
+  zh: {
+    searching: '搜索中…',
+    noPerson: '没有匹配的员工。',
+    personPlaceholder: '按姓名或工号查找',
+    clear: '清除选择',
+    inactive: '（已离职）',
+    filterPlaceholder: '输入以筛选列表',
+    noOption: '没有匹配的项目。',
+    choose: '请选择',
+    boolUnset: '未填写',
+    boolYes: '是',
+    boolNo: '否',
+    restricted: '（受限）',
+  },
+});

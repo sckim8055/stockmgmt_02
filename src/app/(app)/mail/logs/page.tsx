@@ -3,26 +3,16 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { RequireCompany } from '../../../shell';
 import { api, Badge, EmptyRow, Notice, PageHeader, Table, td } from '../../../ui';
-import { fmtDateTime } from '../../assets/shared';
 import { Pager } from '../../peripherals/shared';
-import { LOG_STATUS_LABEL, SENDING_DISABLED, type MailLogPage } from '../labels';
+import { useMailLabels, type MailLogPage } from '../labels';
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
+import { useFmt } from '../../../i18n/format';
 
 const PAGE_SIZE = 50;
 
-const T = {
-  title: '발송 기록',
-  loading: '불러오는 중…',
-  empty: '아직 발송된 메일이 없습니다.',
-  colTime: '시각',
-  colRecipient: '받는 사람',
-  colSubject: '제목',
-  colStatus: '상태',
-  colError: '오류',
-  none: '',
-  total: (n: number) => `총 ${n.toLocaleString('ko-KR')}건`,
-};
-
 export default function MailLogsPage() {
+  const T = useT(TEXT);
   return (
     <RequireCompany>
       <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
@@ -33,6 +23,9 @@ export default function MailLogsPage() {
 }
 
 function LogsInner() {
+  const F = useFmt();
+  const M = useMailLabels();
+  const T = useT(TEXT);
   const router = useRouter();
   const sp = useSearchParams();
   const page = sp.get('page') ?? '';
@@ -74,16 +67,16 @@ function LogsInner() {
             {items.length === 0 ? (
               <EmptyRow colSpan={head.length}>
                 {T.empty}
-                <div style={{ fontSize: 13, marginTop: 4 }}>{SENDING_DISABLED}</div>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{M.sendingDisabled}</div>
               </EmptyRow>
             ) : null}
             {items.map((l) => (
               <tr key={l.id}>
-                <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={l.sent_at}>{fmtDateTime(l.sent_at)}</time></td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={l.sent_at}>{F.dateTime(l.sent_at)}</time></td>
                 <td style={td}>{l.recipient}</td>
                 <td style={td}>{l.subject ?? T.none}</td>
                 <td style={td}>
-                  <Badge tone={l.status === 'SENT' ? 'green' : 'red'}>{LOG_STATUS_LABEL[l.status] ?? l.status}</Badge>
+                  <Badge tone={l.status === 'SENT' ? 'green' : 'red'}>{M.logStatus[l.status] ?? l.status}</Badge>
                 </td>
                 <td style={{ ...td, color: '#991b1b', fontSize: 13 }}>{l.error ?? T.none}</td>
               </tr>

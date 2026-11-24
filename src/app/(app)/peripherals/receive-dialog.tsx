@@ -4,30 +4,10 @@ import { useShell } from '../../shell';
 import { api, Button, ErrorText, LabeledField, Modal, Notice, smallInput } from '../../ui';
 import { FilterableSelect, listOf, modelLabel, type Loaded } from '../assets/shared';
 import type { DepartmentOption, ModelOption } from '../assets/types';
-import { fmtQty } from './labels';
-import { NoteField, parseQty, QtyField } from './shared';
+import { NoteField, useParseQty, QtyField } from './shared';
 import { MAX_QTY } from './types';
-
-const T = {
-  title: '주변기기 입고',
-  fModel: '모델',
-  fModelNone: '입고할 수 있는 주변기기용 모델이 없습니다. 기준 정보 > 모델에서 먼저 등록하세요.',
-  fModelUnavailable: '모델 목록을 볼 권한이 없어 입고할 수 없습니다.',
-  fDept: '관리 부서',
-  fDeptDefault: '지정 안 함 (기본 부서)',
-  fDeptChoose: '선택하세요',
-  fDeptHint: '내 부서 범위 안의 부서에만 입고할 수 있습니다.',
-  fDeptUnavailable: '부서 목록을 볼 권한이 없어 관리 부서를 고를 수 없습니다. 기본 부서로 입고합니다.',
-  fDeptBlocked: '부서 목록을 볼 권한이 없고 기본 부서가 내 부서 범위 밖이라 입고할 수 없습니다.',
-  fQty: '수량',
-  fNote: '메모 (선택)',
-  modelRequired: '모델을 고르세요.',
-  deptRequired: '관리 부서를 고르세요.',
-  done: (n: number) => `입고했습니다. (현재 보유 ${fmtQty(n)}개)`,
-  cancel: '취소',
-  submit: '입고',
-  saving: '처리 중…',
-};
+import { useT } from '../../i18n';
+import { TEXT } from './receive-dialog.text';
 
 export function ReceiveDialog({
   models,
@@ -40,6 +20,8 @@ export function ReceiveDialog({
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
+  const T = useT(TEXT);
+  const parseQty = useParseQty();
   const { perms } = useShell();
   const modelOptions = listOf(models)
     .filter((m) => m.kind === 'PERIPHERAL' && m.is_active)

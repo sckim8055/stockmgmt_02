@@ -3,23 +3,11 @@
 import { useEffect, useState } from 'react';
 import { api, Badge, Button, ErrorText, LabeledField, smallInput } from '../../ui';
 import type { AssetState } from '@/lib/assets/transitions';
-import { STATE_TONE, stateText } from './labels';
+import { STATE_TONE, stateText, useAssetLabels } from './labels';
+import { useFmt } from '../../i18n/format';
 import type { CustomFieldDef, PersonOption } from './types';
-
-const T = {
-  searching: '찾는 중…',
-  noPerson: '맞는 직원이 없습니다.',
-  personPlaceholder: '이름·사번으로 찾기',
-  clear: '선택 해제',
-  inactive: '(퇴사)',
-  filterPlaceholder: '입력해서 목록 좁히기',
-  noOption: '맞는 항목이 없습니다.',
-  choose: '선택하세요',
-  boolUnset: '입력 안 함',
-  boolYes: '예',
-  boolNo: '아니오',
-  restricted: '(제한)',
-};
+import { useT } from '../../i18n';
+import { TEXT } from './shared.text';
 
 // ───────────────────────── 데이터 ─────────────────────────
 
@@ -62,7 +50,8 @@ export function useDebounced<V>(value: V, ms: number): V {
 // ───────────────────────── 표시 ─────────────────────────
 
 export function StateBadge({ state, substate }: { state: AssetState; substate: string | null }) {
-  return <Badge tone={STATE_TONE[state] ?? 'gray'}>{stateText(state, substate)}</Badge>;
+  const L = useAssetLabels();
+  return <Badge tone={STATE_TONE[state] ?? 'gray'}>{stateText(L, state, substate)}</Badge>;
 }
 
 /** 오늘 날짜(브라우저 기준) YYYY-MM-DD */
@@ -73,10 +62,6 @@ export function todayIso(): string {
 }
 
 export const isOverdue = (due: string | null) => due !== null && due < todayIso();
-
-export const fmtDateTime = (iso: string) => new Date(iso).toLocaleString('ko-KR');
-
-export const fmtPrice = (v: number | null | undefined) => (v === null || v === undefined ? '' : v.toLocaleString('ko-KR'));
 
 export const modelLabel = (m: { manufacturer: string; name: string }) => `${m.manufacturer} ${m.name}`;
 
@@ -101,6 +86,7 @@ export function FilterableSelect({
   onChange: (v: string) => void;
   required?: boolean;
 }) {
+  const T = useT(TEXT);
   const [filter, setFilter] = useState('');
   const f = filter.trim().toLowerCase();
   // 고른 항목은 걸러져도 남겨 둔다(선택이 보이지 않게 사라지지 않도록).
@@ -150,6 +136,7 @@ export function PersonPicker({
   /** 배정처럼 재직자만 고를 수 있는 경우 */
   activeOnly?: boolean;
 }) {
+  const T = useT(TEXT);
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim(), 300);
   const [results, setResults] = useState<PersonOption[] | null>(null);
@@ -256,6 +243,7 @@ export function parseCustom(def: CustomFieldDef, raw: string): unknown {
 }
 
 export function CustomFieldInputs({ defs, draft, onChange }: { defs: CustomFieldDef[]; draft: CustomDraft; onChange: (next: CustomDraft) => void }) {
+  const T = useT(TEXT);
   return (
     <>
       {defs.map((d) => (
@@ -291,8 +279,13 @@ export function CustomFieldInputs({ defs, draft, onChange }: { defs: CustomField
   );
 }
 
-export function customDisplay(v: unknown): string {
-  if (typeof v === 'boolean') return v ? T.boolYes : T.boolNo;
-  if (typeof v === 'number') return v.toLocaleString('ko-KR');
-  return typeof v === 'string' ? v : JSON.stringify(v);
+/** 사용자 지정 필드 값의 표시(현재 언어) */
+export function useCustomDisplay(): (v: unknown) => string {
+  const T = useT(TEXT);
+  const F = useFmt();
+  return (v) => {
+    if (typeof v === 'boolean') return v ? T.boolYes : T.boolNo;
+    if (typeof v === 'number') return F.num(v);
+    return typeof v === 'string' ? v : JSON.stringify(v);
+  };
 }

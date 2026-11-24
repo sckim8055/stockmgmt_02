@@ -4,52 +4,14 @@ import { useShell } from '../../../shell';
 import { api, Button, ErrorText, LabeledField, Modal, Notice, smallInput } from '../../../ui';
 import { listOf, useList } from '../../assets/shared';
 import type { DepartmentOption } from '../../assets/types';
-import {
-  CONTENT_HINT, CONTENT_LABEL, DEFAULT_TIMEZONE, FREQUENCY_LABEL, LANG_LABEL, MAX_NAME, MAX_RECIPIENTS, TIME_RE, TIMEZONE_LABEL, WEEKDAY_LABEL,
-  type ContentType, type Frequency, type MailLang, type ScheduleRow,
-} from '../labels';
+import { DEFAULT_TIMEZONE, MAIL_LANG_NAME, MAX_NAME, MAX_RECIPIENTS, TIME_RE, useMailLabels, type ContentType, type Frequency, type MailLang, type ScheduleRow } from '../labels';
 import { draftFromRecipients, RecipientsField, type AccountOption, type RecipientDraft } from './recipients';
+import { useT } from '../../../i18n';
+import { TEXT } from './schedule-dialog.text';
 
-const T = {
-  createTitle: '메일 일정 추가',
-  editTitle: (n: string) => `메일 일정 수정 — ${n}`,
-  fName: '이름',
-  fContent: '내용',
-  fDept: '부서',
-  deptAll: '전체 (기업 전체 자료)',
-  deptChoose: '선택하세요',
-  deptScopedHint: '내 부서 범위 안의 부서만 고를 수 있습니다. 기업 전체 일정은 부서 범위 제한이 없는 사용자만 만들 수 있습니다.',
-  deptHint: '정한 부서의 자료만 보냅니다. 만든 뒤에는 바꿀 수 없습니다.',
-  deptUnavailableAll: '부서 목록을 볼 권한이 없어 기업 전체 일정만 만들 수 있습니다.',
-  deptUnavailableScoped: '부서 목록을 볼 권한이 없고 기업 전체 일정도 만들 수 없어, 메일 일정을 추가할 수 없습니다.',
-  deptFixed: (d: string) => `${d} — 부서는 만든 뒤에 바꿀 수 없습니다. 다른 부서로 보내려면 새 일정을 만드세요.`,
-  all: '전체',
-  fFrequency: '주기',
-  fWeekdays: '요일',
-  fMonthDays: '날짜',
-  monthDaysHint: '29·30·31일처럼 그 날짜가 없는 달에는 보내지 않고 건너뜁니다.',
-  fTime: '보내는 시각',
-  fTimezone: '시간대',
-  fLang: '메일 언어',
-  fSkip: '보낼 내용이 없으면 보내지 않기',
-  fSkipHint: '끄면 내용이 없어도 "해당하는 항목이 없습니다" 메일을 보냅니다.',
-  nameRequired: '이름을 입력하세요.',
-  daysRequiredWeekly: '요일을 하나 이상 고르세요.',
-  daysRequiredMonthly: '날짜를 하나 이상 고르세요.',
-  timeInvalid: '보내는 시각을 HH:MM 형식으로 입력하세요.',
-  deptRequired: '부서를 고르세요.',
-  tooMany: `받는 사람은 최대 ${MAX_RECIPIENTS}명입니다.`,
-  createdOff: '일정은 꺼진 상태로 만들어집니다. 받는 사람을 정한 뒤 목록에서 켜세요.',
-  nothingChanged: '바뀐 내용이 없습니다.',
-  cancel: '취소',
-  create: '추가',
-  save: '저장',
-  saving: '저장 중…',
-};
-
-const FREQUENCIES = Object.keys(FREQUENCY_LABEL) as Frequency[];
-const CONTENTS = Object.keys(CONTENT_LABEL) as ContentType[];
-const LANGS = Object.keys(LANG_LABEL) as MailLang[];
+const FREQUENCIES: Frequency[] = ['DAILY', 'WEEKLY', 'MONTHLY'];
+const CONTENTS: ContentType[] = ['LOW_STOCK', 'STOCK_SUMMARY', 'OPEN_LOANS'];
+const LANGS = Object.keys(MAIL_LANG_NAME) as MailLang[];
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
 const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
@@ -89,6 +51,8 @@ function DayGrid({ legend, hint, values, labelOf, selected, onChange, columns }:
 }
 
 export function ScheduleDialog({ schedule, onClose, onDone }: { schedule: ScheduleRow | null; onClose: () => void; onDone: () => void }) {
+  const M = useMailLabels();
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const creating = schedule === null;
   const departments = useList<DepartmentOption>(creating && can('master.department', 'read') ? '/api/departments' : null, 'departments');
@@ -114,7 +78,7 @@ export function ScheduleDialog({ schedule, onClose, onDone }: { schedule: Schedu
   const [busy, setBusy] = useState(false);
 
   // 시간대는 짧은 목록에서 고른다. 이 일정에 이미 다른 값이 있으면 그 값도 남겨 둔다.
-  const timezones = Object.keys(TIMEZONE_LABEL);
+  const timezones = Object.keys(M.timezone);
   if (schedule && !timezones.includes(schedule.timezone)) timezones.push(schedule.timezone);
 
   const days = frequency === 'WEEKLY' ? weekdays : frequency === 'MONTHLY' ? monthDays : [];
@@ -176,10 +140,10 @@ export function ScheduleDialog({ schedule, onClose, onDone }: { schedule: Schedu
         <LabeledField label={T.fName}>
           {(id) => <input id={id} style={smallInput} value={name} onChange={(e) => setName(e.target.value)} required maxLength={MAX_NAME} autoComplete="off" />}
         </LabeledField>
-        <LabeledField label={T.fContent} hint={CONTENT_HINT[contentType]}>
+        <LabeledField label={T.fContent} hint={M.contentHint[contentType]}>
           {(id) => (
             <select id={id} style={smallInput} value={contentType} onChange={(e) => setContentType(e.target.value as ContentType)}>
-              {CONTENTS.map((c) => <option key={c} value={c}>{CONTENT_LABEL[c]}</option>)}
+              {CONTENTS.map((c) => <option key={c} value={c}>{M.content[c]}</option>)}
             </select>
           )}
         </LabeledField>
@@ -205,15 +169,15 @@ export function ScheduleDialog({ schedule, onClose, onDone }: { schedule: Schedu
           <legend style={{ fontSize: 13, color: '#4b5563', padding: 0, marginBottom: 4 }}>{T.fFrequency}</legend>
           {FREQUENCIES.map((f) => (
             <label key={f} style={{ marginRight: 16 }}>
-              <input type="radio" name="frequency" value={f} checked={frequency === f} onChange={() => setFrequency(f)} /> {FREQUENCY_LABEL[f]}
+              <input type="radio" name="frequency" value={f} checked={frequency === f} onChange={() => setFrequency(f)} /> {M.frequency[f]}
             </label>
           ))}
         </fieldset>
         {frequency === 'WEEKLY' ? (
-          <DayGrid legend={T.fWeekdays} values={WEEKDAYS} labelOf={(d) => WEEKDAY_LABEL[d] ?? String(d)} selected={weekdays} onChange={setWeekdays} columns={7} />
+          <DayGrid legend={T.fWeekdays} values={WEEKDAYS} labelOf={(d) => M.weekday[d] ?? String(d)} selected={weekdays} onChange={setWeekdays} columns={7} />
         ) : null}
         {frequency === 'MONTHLY' ? (
-          <DayGrid legend={T.fMonthDays} hint={T.monthDaysHint} values={MONTH_DAYS} labelOf={(d) => `${d}일`} selected={monthDays} onChange={setMonthDays} columns={7} />
+          <DayGrid legend={T.fMonthDays} hint={T.monthDaysHint} values={MONTH_DAYS} labelOf={M.monthDay} selected={monthDays} onChange={setMonthDays} columns={7} />
         ) : null}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
           <LabeledField label={T.fTime}>
@@ -222,14 +186,14 @@ export function ScheduleDialog({ schedule, onClose, onDone }: { schedule: Schedu
           <LabeledField label={T.fTimezone}>
             {(id) => (
               <select id={id} style={smallInput} value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-                {timezones.map((z) => <option key={z} value={z}>{TIMEZONE_LABEL[z] ?? z}</option>)}
+                {timezones.map((z) => <option key={z} value={z}>{M.timezone[z] ?? z}</option>)}
               </select>
             )}
           </LabeledField>
           <LabeledField label={T.fLang}>
             {(id) => (
               <select id={id} style={smallInput} value={lang} onChange={(e) => setLang(e.target.value as MailLang)}>
-                {LANGS.map((l) => <option key={l} value={l}>{LANG_LABEL[l]}</option>)}
+                {LANGS.map((l) => <option key={l} value={l}>{MAIL_LANG_NAME[l]}</option>)}
               </select>
             )}
           </LabeledField>

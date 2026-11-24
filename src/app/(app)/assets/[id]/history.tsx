@@ -1,52 +1,29 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api, ErrorText } from '../../../ui';
-import { stateText, TXN_LABEL } from '../labels';
-import { fmtDateTime } from '../shared';
+import { stateText, useAssetLabels } from '../labels';
 import type { HistoryRow } from '../types';
+import { useT } from '../../../i18n';
+import { TEXT } from './history.text';
+import { useFmt } from '../../../i18n/format';
 
-const T = {
-  title: '이력',
-  loading: '불러오는 중…',
-  empty: '이력이 없습니다.',
-  state: '상태',
-  holder: '보유자',
-  dept: '관리 부서',
-  location: '위치',
-  note: '메모',
-  changed: '바뀐 항목',
-  none: '없음',
-  by: (name: string) => `처리: ${name}`,
-  unknownActor: '알 수 없음',
-};
-
-/** 수정 이력의 메모("changed: a, b")에 들어 있는 입력 키의 표시 이름 */
-const FIELD_LABEL: Record<string, string> = {
-  modelId: '모델',
-  assetTag: '자산 태그',
-  serialNumber: '시리얼',
-  departmentId: '관리 부서',
-  location: '위치',
-  purchaseDate: '구매일',
-  purchasePrice: '구매가',
-  supplier: '공급업체',
-  warrantyEnd: '보증 만료일',
-  custom: '사용자 지정 필드',
-};
 const CHANGED_PREFIX = 'changed: ';
 
-function changedFields(note: string): string {
+/** 수정 이력의 메모("changed: a, b")를 바뀐 항목 이름으로 바꾼다. 형식이 다르면 null. */
+export function changedFields(note: string, fieldLabel: Record<string, string>): string | null {
+  if (!note.startsWith(CHANGED_PREFIX)) return null;
   return note
     .slice(CHANGED_PREFIX.length)
     .split(',')
     .map((k) => k.trim())
     .filter(Boolean)
-    .map((k) => FIELD_LABEL[k] ?? k)
+    .map((k) => fieldLabel[k] ?? k)
     .join(', ');
 }
 
 /** 이력(최신순). 서버가 최신순으로 내려준다. */
 export function AssetHistory({ assetId, reloadKey }: { assetId: string; reloadKey: number }) {
+  const T = useT(TEXT);
   const [rows, setRows] = useState<HistoryRow[] | null>(null);
   const [error, setError] = useState('');
 
@@ -83,11 +60,14 @@ export function AssetHistory({ assetId, reloadKey }: { assetId: string; reloadKe
 }
 
 function HistoryItem({ h }: { h: HistoryRow }) {
+  const F = useFmt();
+  const L = useAssetLabels();
+  const T = useT(TEXT);
   const lines: [string, string][] = [];
   const stateChanged = h.to_state !== null && (h.from_state !== h.to_state || h.from_substate !== h.to_substate);
   if (stateChanged) {
-    const from = h.from_state ? stateText(h.from_state, h.from_substate) : null;
-    lines.push([T.state, from ? `${from} → ${stateText(h.to_state as string, h.to_substate)}` : stateText(h.to_state as string, h.to_substate)]);
+    const from = h.from_state ? stateText(L, h.from_state, h.from_substate) : null;
+    lines.push([T.state, from ? `${from} → ${stateText(L, h.to_state as string, h.to_substate)}` : stateText(L, h.to_state as string, h.to_substate)]);
   }
   if (h.from_holder_name !== h.to_holder_name) lines.push([T.holder, `${h.from_holder_name ?? T.none} → ${h.to_holder_name ?? T.none}`]);
   if (h.from_department_name !== h.to_department_name) {
@@ -95,7 +75,8 @@ function HistoryItem({ h }: { h: HistoryRow }) {
   }
   if (h.from_location !== h.to_location) lines.push([T.location, `${h.from_location ?? T.none} → ${h.to_location ?? T.none}`]);
   if (h.note) {
-    if (h.type === 'UPDATE' && h.note.startsWith(CHANGED_PREFIX)) lines.push([T.changed, changedFields(h.note)]);
+    const changed = h.type === 'UPDATE' ? changedFields(h.note, T.field) : null;
+    if (changed !== null) lines.push([T.changed, changed]);
     else lines.push([T.note, h.note]);
   }
 
@@ -103,10 +84,10 @@ function HistoryItem({ h }: { h: HistoryRow }) {
     <li style={{ position: 'relative', padding: '0 0 14px 16px' }}>
       <span aria-hidden style={{ position: 'absolute', left: -6, top: 5, width: 10, height: 10, borderRadius: 5, background: '#2563eb' }} />
       <div style={{ fontSize: 14 }}>
-        <strong>{TXN_LABEL[h.type] ?? h.type}</strong>
+        <strong>{L.txn[h.type] ?? h.type}</strong>
         <span style={{ color: '#6b7280', fontSize: 13 }}>
           {' · '}
-          <time dateTime={h.created_at}>{fmtDateTime(h.created_at)}</time>
+          <time dateTime={h.created_at}>{F.dateTime(h.created_at)}</time>
           {' · '}
           {T.by(h.actor_name ?? T.unknownActor)}
         </span>

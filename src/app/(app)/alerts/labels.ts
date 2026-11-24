@@ -1,6 +1,9 @@
 // 알림함의 응답 형식과 표시. 알림 종류와 내용(payload)의 키는 서버가 정한다
 // (src/lib/alerts/thresholds.ts: LOW_STOCK·STOCK_RECOVERED, src/lib/alerts/daily.ts: WARRANTY_EXPIRING·LOAN_OVERDUE).
+// 문구는 labels.text.ts 에 있다.
 // 내용은 서버가 만든 JSON 이라도 화면에서는 모르는 값으로 다룬다: 키마다 형식을 확인하고, 맞지 않으면 문장을 만들지 않는다.
+import { useLang, type Lang } from '../../i18n';
+import { TEXT } from './labels.text';
 
 export interface AlertItem {
   id: string;
@@ -20,13 +23,6 @@ export interface AlertPage {
 
 export type KnownAlertType = 'LOW_STOCK' | 'STOCK_RECOVERED' | 'WARRANTY_EXPIRING' | 'LOAN_OVERDUE';
 
-export const ALERT_TYPE_LABEL: Record<KnownAlertType, string> = {
-  LOW_STOCK: '재고 부족',
-  STOCK_RECOVERED: '재고 회복',
-  WARRANTY_EXPIRING: '보증 만료 임박',
-  LOAN_OVERDUE: '반납 기한 지남',
-};
-
 export const ALERT_TYPE_TONE: Record<KnownAlertType, 'red' | 'green' | 'amber'> = {
   LOW_STOCK: 'red',
   STOCK_RECOVERED: 'green',
@@ -34,17 +30,16 @@ export const ALERT_TYPE_TONE: Record<KnownAlertType, 'red' | 'green' | 'amber'> 
   LOAN_OVERDUE: 'red',
 };
 
-export const isKnownType = (t: string): t is KnownAlertType => Object.prototype.hasOwnProperty.call(ALERT_TYPE_LABEL, t);
+export const isKnownType = (t: string): t is KnownAlertType => Object.prototype.hasOwnProperty.call(ALERT_TYPE_TONE, t);
 
-const T = {
-  all: '전체',
-  noHolder: '보유자 없음',
-  lowStock: (target: string, dept: string, qty: string, min: string) => `${target} (${dept}) 사용 가능 수량이 ${qty}개로 한계 수량 ${min}개보다 적습니다.`,
-  recovered: (target: string, dept: string, qty: string, min: string) => `${target} (${dept}) 사용 가능 수량이 ${qty}개로 회복되었습니다. (한계 수량 ${min}개)`,
-  warranty: (tag: string, model: string, end: string) => `자산 ${tag} (${model})의 보증이 ${end}에 끝납니다.`,
-  assetOverdue: (tag: string, holder: string, due: string) => `자산 ${tag}의 반납 기한(${due})이 지났습니다. 보유자: ${holder}`,
-  loanOverdue: (holder: string, model: string, qty: string, due: string) => `${holder} 님이 대여한 ${model} ${qty}개의 반납 기한(${due})이 지났습니다.`,
-};
+/** 알림 화면의 문구(현재 언어) */
+export type AlertLabels = Omit<(typeof TEXT)[Lang], 'type'> & { type: Record<KnownAlertType, string> };
+// 종류 이름의 키가 알림 종류와 다르면 여기서 타입 오류가 난다.
+const LABELS: Record<Lang, AlertLabels> = TEXT;
+
+export function useAlertLabels(): AlertLabels {
+  return LABELS[useLang()];
+}
 
 /** 화면 안에서 갈 곳. 볼 권한이 있을 때만 링크로 그린다. */
 export interface AlertLink {
@@ -67,9 +62,9 @@ function str(p: Record<string, unknown>, k: string): string | null {
   const v = p[k];
   return typeof v === 'string' && v !== '' ? v : null;
 }
-function num(p: Record<string, unknown>, k: string): string | null {
+function num(p: Record<string, unknown>, k: string, locale: string): string | null {
   const v = p[k];
-  return typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('ko-KR') : null;
+  return typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString(locale) : null;
 }
 /** 값이 없을 수 있는 문자열(부서 = 기업 전체, 보유자 = 없음). 키는 있어야 한다. */
 function optStr(p: Record<string, unknown>, k: string, fallback: string): string | null {
@@ -82,7 +77,8 @@ const assetLink = (id: string | null): AlertLink | null =>
 
 const UNKNOWN: AlertView = { text: null, link: null };
 
-export function describeAlert(type: string, payload: unknown): AlertView {
+/** 알림 내용을 현재 언어의 문장으로 만든다. T 는 useAlertLabels(), locale 은 useFmt().locale. */
+export function describeAlert(T: AlertLabels, locale: string, type: string, payload: unknown): AlertView {
   const p = record(payload);
   if (!p || !isKnownType(type)) return UNKNOWN;
   switch (type) {
@@ -90,8 +86,8 @@ export function describeAlert(type: string, payload: unknown): AlertView {
     case 'STOCK_RECOVERED': {
       const target = str(p, 'target');
       const dept = optStr(p, 'department', T.all);
-      const qty = num(p, 'qty');
-      const min = num(p, 'minQty');
+      const qty = num(p, 'qty', locale);
+      const min = num(p, 'minQty', locale);
       if (!target || !dept || qty === null || min === null) return UNKNOWN;
       return {
         text: (type === 'LOW_STOCK' ? T.lowStock : T.recovered)(target, dept, qty, min),
@@ -113,7 +109,7 @@ export function describeAlert(type: string, payload: unknown): AlertView {
       const tag = str(p, 'assetTag');
       if (tag) return { text: T.assetOverdue(tag, holder, due), link: assetLink(str(p, 'assetId')) };
       const model = str(p, 'model');
-      const qty = num(p, 'qty');
+      const qty = num(p, 'qty', locale);
       if (!model || qty === null) return UNKNOWN;
       return { text: T.loanOverdue(holder, model, qty, due), link: { href: '/peripherals/loans?overdue=true', permission: ['peripheral.loan', 'read'] } };
     }

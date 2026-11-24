@@ -2,27 +2,13 @@
 // 업로드 검사·반영 결과 표시.
 import { Table, td } from '../../ui';
 import type { ImportResult } from './labels';
-
-const T = {
-  rows: (n: number) => `자료 ${n.toLocaleString('ko-KR')}행`,
-  previewClean: (n: number) => `검사를 마쳤습니다. 오류가 없습니다. ${n.toLocaleString('ko-KR')}행을 반영할 수 있습니다.`,
-  hasErrors: (n: number) => `오류 ${n.toLocaleString('ko-KR')}건이 있어 반영할 수 없습니다. 파일을 고친 뒤 다시 골라 검사하세요.`,
-  commitRejected: '반영하지 못했습니다. 검사한 뒤 자료가 바뀌어 아래 오류가 생겼습니다. 아무것도 반영되지 않았습니다.',
-  errorsCapped: '오류는 처음 200건까지만 표시합니다.',
-  createdTitlePreview: '반영하면 자동으로 만들 기준 정보',
-  createdTitleDone: '자동으로 만든 기준 정보',
-  createdNone: '자동으로 만들 기준 정보가 없습니다.',
-  departments: '부서',
-  categories: '카테고리',
-  models: '모델',
-  colRow: '행',
-  colMessage: '오류 내용',
-  errorCaption: '행 번호는 엑셀의 행 번호입니다(머리글이 1행).',
-};
+import { useT } from '../../i18n';
+import { TEXT } from './result.text';
 
 const ERROR_CAP = 200;
 
 export function CreatedList({ created, done }: { created: ImportResult['created']; done: boolean }) {
+  const T = useT(TEXT);
   const groups: [string, string[]][] = [
     [T.departments, created.departments],
     [T.categories, created.categories],
@@ -47,6 +33,7 @@ export function CreatedList({ created, done }: { created: ImportResult['created'
 
 /** 검사 결과 또는 반영 거부(422) 결과 */
 export function CheckResult({ result, rejected }: { result: ImportResult; rejected: boolean }) {
+  const T = useT(TEXT);
   const errors = result.errors;
   const clean = errors.length === 0;
   return (

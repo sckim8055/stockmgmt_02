@@ -2,46 +2,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RequireCompany, useShell } from '../../../shell';
 import { api, Badge, Button, ConfirmDialog, EmptyRow, ErrorText, PageHeader, Table, td } from '../../../ui';
-import { fmtDateTime } from '../../assets/shared';
-import { CONTENT_LABEL, frequencyPhrase, SENDING_DISABLED, TIMEZONE_LABEL, type ScheduleRow } from '../labels';
+import { frequencyPhrase, useMailLabels, type ScheduleRow } from '../labels';
 import { PreviewDialog } from './preview-dialog';
 import { ScheduleDialog } from './schedule-dialog';
-
-const T = {
-  title: '메일 일정',
-  add: '일정 추가',
-  loading: '불러오는 중…',
-  empty: '메일 일정이 없습니다.',
-  noticeTitle: '아직 메일이 발송되지 않습니다',
-  scopedNote: '내 부서 범위의 일정만 보입니다. 기업 전체 일정은 부서 범위 제한이 없는 사용자만 보고 관리합니다.',
-  colName: '이름',
-  colContent: '내용',
-  colDept: '부서',
-  colSchedule: '주기',
-  colRecipients: '받는 사람',
-  colState: '상태',
-  colNext: '다음 발송 예정',
-  colActions: '작업',
-  all: '전체',
-  on: '켜짐',
-  off: '꺼짐',
-  people: (n: number) => `${n.toLocaleString('ko-KR')}명`,
-  nextNote: '발송 기능이 켜지면 이 시각에 보냅니다.',
-  none: '-',
-  preview: '미리보기',
-  activate: '켜기',
-  deactivate: '끄기',
-  edit: '수정',
-  remove: '삭제',
-  created: '일정을 추가했습니다. 꺼진 상태이니 확인 후 켜세요.',
-  saved: '저장했습니다.',
-  activated: (n: string) => `"${n}" 일정을 켰습니다.`,
-  deactivated: (n: string) => `"${n}" 일정을 껐습니다.`,
-  removed: '삭제했습니다.',
-  confirmDeleteTitle: '메일 일정 삭제',
-  confirmDelete: (n: string) => `"${n}" 일정을 삭제합니다. 발송 기록이 있는 일정은 삭제할 수 없으며, 그때는 끄세요.`,
-  total: (n: number) => `총 ${n.toLocaleString('ko-KR')}건`,
-};
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
+import { useFmt } from '../../../i18n/format';
 
 type Dialog = { kind: 'create' } | { kind: 'edit' | 'delete' | 'preview'; schedule: ScheduleRow } | null;
 
@@ -54,6 +20,9 @@ export default function MailSchedulesPage() {
 }
 
 function SchedulesInner() {
+  const F = useFmt();
+  const M = useMailLabels();
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const [rows, setRows] = useState<ScheduleRow[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -112,7 +81,7 @@ function SchedulesInner() {
       />
       <div role="note" style={{ background: '#fef6e4', border: '1px solid #f5d58a', color: '#92400e', borderRadius: 6, padding: '12px 14px', fontSize: 14, marginBottom: 12 }}>
         <strong style={{ display: 'block', marginBottom: 2 }}>{T.noticeTitle}</strong>
-        {SENDING_DISABLED}
+        {M.sendingDisabled}
       </div>
       {perms.departmentScope !== null ? <p style={{ fontSize: 13, color: '#4b5563' }}>{T.scopedNote}</p> : null}
       {notice?.tone === 'ok' ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice.text}</p> : null}
@@ -124,18 +93,18 @@ function SchedulesInner() {
           {rows.map((s) => (
             <tr key={s.id} style={s.is_active ? undefined : { color: '#4b5563' }}>
               <td style={td}>{s.name}</td>
-              <td style={td}>{CONTENT_LABEL[s.content_type] ?? s.content_type}</td>
+              <td style={td}>{M.content[s.content_type] ?? s.content_type}</td>
               <td style={td}>{s.department_name ?? T.all}</td>
               <td style={td}>
-                {frequencyPhrase(s)}
-                <div style={{ fontSize: 12, color: '#6b7280' }}>{TIMEZONE_LABEL[s.timezone] ?? s.timezone}</div>
+                {frequencyPhrase(M, s)}
+                <div style={{ fontSize: 12, color: '#6b7280' }}>{M.timezone[s.timezone] ?? s.timezone}</div>
               </td>
               <td style={{ ...td, textAlign: 'right' }}>{T.people(s.recipients.length)}</td>
               <td style={td}>{s.is_active ? <Badge tone="green">{T.on}</Badge> : <Badge tone="gray">{T.off}</Badge>}</td>
               <td style={{ ...td, whiteSpace: 'nowrap' }}>
                 {s.is_active && s.next_run_at ? (
                   <>
-                    <time dateTime={s.next_run_at}>{fmtDateTime(s.next_run_at)}</time>
+                    <time dateTime={s.next_run_at}>{F.dateTime(s.next_run_at)}</time>
                     <div style={{ fontSize: 12, color: '#6b7280' }}>{T.nextNote}</div>
                   </>
                 ) : T.none}

@@ -1,0 +1,47 @@
+// history-dialog.tsx 의 화면 문구. 세 언어의 키는 같아야 한다(dict 가 컴파일할 때 검사한다).
+import { dict } from '../../i18n';
+
+export const TEXT = dict({
+  ko: {
+    title: (name: string) => `이력 — ${name}`,
+    loading: '불러오는 중…',
+    empty: '이력이 없습니다.',
+    colTime: '일시',
+    colType: '종류',
+    colQty: '수량',
+    colPerson: '직원',
+    colActor: '처리자',
+    colNote: '메모',
+    location: (s: string) => `위치: ${s}`,
+    unknownActor: '알 수 없음',
+    qtyHint: '수량은 보유 수량이 늘면 +, 줄면 - 입니다. 대여 분실은 대여 중 수량이 줄어든 것이라 - 로 표시합니다.',
+  },
+  en: {
+    title: (name: string) => `History — ${name}`,
+    loading: 'Loading…',
+    empty: 'No history yet.',
+    colTime: 'Date/time',
+    colType: 'Type',
+    colQty: 'Qty',
+    colPerson: 'Employee',
+    colActor: 'By',
+    colNote: 'Note',
+    location: (s: string) => `Location: ${s}`,
+    unknownActor: 'Unknown',
+    qtyHint: 'Quantity is + when stock on hand increases and - when it decreases. Items lost on loan reduce the on-loan quantity and are shown as -.',
+  },
+  zh: {
+    title: (name: string) => `记录 — ${name}`,
+    loading: '加载中…',
+    empty: '暂无记录。',
+    colTime: '时间',
+    colType: '类型',
+    colQty: '数量',
+    colPerson: '员工',
+    colActor: '处理人',
+    colNote: '备注',
+    location: (s: string) => `位置：${s}`,
+    unknownActor: '未知',
+    qtyHint: '在库数量增加为 +，减少为 -。借用丢失会减少借出数量，因此显示为 -。',
+  },
+});

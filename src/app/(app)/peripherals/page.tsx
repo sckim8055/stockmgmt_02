@@ -3,45 +3,19 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { RequireCompany, useShell } from '../../shell';
 import { api, Button, EmptyRow, ErrorText, PageHeader, smallInput, Table, td } from '../../ui';
-import { fmtDateTime, listOf, modelLabel, useDebounced, useList } from '../assets/shared';
+import { listOf, modelLabel, useDebounced, useList } from '../assets/shared';
 import type { CategoryOption, DepartmentOption, ModelOption } from '../assets/types';
 import { AdjustDialog } from './adjust-dialog';
 import { HistoryDialog } from './history-dialog';
 import { IssueDialog } from './issue-dialog';
-import { fmtQty } from './labels';
 import { ReceiveDialog } from './receive-dialog';
 import { FilterBox, filterSelect, Pager } from './shared';
 import type { StockPage, StockRow } from './types';
+import { useT } from '../../i18n';
+import { TEXT } from './page.text';
+import { useFmt } from '../../i18n/format';
 
 const PAGE_SIZE = 50;
-
-const T = {
-  title: '주변기기 재고',
-  receive: '입고',
-  loading: '불러오는 중…',
-  empty: '조건에 맞는 재고가 없습니다.',
-  filterQ: '검색',
-  filterQPlaceholder: '카테고리·제조사·모델',
-  filterCategory: '카테고리',
-  filterModel: '모델',
-  filterDept: '관리 부서',
-  all: '전체',
-  inactive: '(사용 안 함)',
-  reset: '조건 초기화',
-  colCategory: '카테고리',
-  colModel: '제조사 + 모델',
-  colDept: '관리 부서',
-  colOnHand: '보유 수량',
-  colOnLoan: '대여 중 수량',
-  colUpdated: '최근 변경',
-  colActions: '작업',
-  issue: '지급',
-  loan: '대여',
-  adjust: '조정',
-  dispose: '폐기',
-  history: '이력',
-  total: (n: number) => `총 ${n.toLocaleString('ko-KR')}건`,
-};
 
 /** URL 에서 읽어 API 로 그대로 넘기는 조건 */
 const API_KEYS = ['q', 'categoryId', 'modelId', 'departmentId', 'page'] as const;
@@ -52,6 +26,7 @@ type Dialog =
   | null;
 
 export default function PeripheralsPage() {
+  const T = useT(TEXT);
   return (
     <RequireCompany>
       {/* useSearchParams 는 Suspense 경계 안에서 써야 한다(Next.js 빌드 규칙). */}
@@ -63,6 +38,8 @@ export default function PeripheralsPage() {
 }
 
 function StockInner() {
+  const F = useFmt();
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const router = useRouter();
   const sp = useSearchParams();
@@ -209,9 +186,9 @@ function StockInner() {
                   {s.model_active ? null : <span style={{ color: '#6b7280', fontSize: 12 }}> {T.inactive}</span>}
                 </td>
                 <td style={td}>{s.department_name}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{fmtQty(s.on_hand_qty)}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{fmtQty(s.on_loan_qty)}</td>
-                <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={s.updated_at}>{fmtDateTime(s.updated_at)}</time></td>
+                <td style={{ ...td, textAlign: 'right' }}>{F.num(s.on_hand_qty)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{F.num(s.on_loan_qty)}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={s.updated_at}>{F.dateTime(s.updated_at)}</time></td>
                 {hasActions ? (
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>

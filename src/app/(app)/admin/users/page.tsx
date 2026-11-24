@@ -17,81 +17,14 @@ import {
   Table,
   td,
   TempPasswordDialog,
-  USER_TYPE_LABEL,
+  useUserTypeLabel,
   type CheckOption,
 } from '../../../ui';
-
-const T = {
-  title: '사용자 관리',
-  add: '사용자 추가',
-  loading: '불러오는 중…',
-  noAccess: '사용자 목록을 볼 권한이 없습니다.',
-  empty: '등록된 사용자가 없습니다.',
-  colLogin: '로그인 ID',
-  colName: '이름',
-  colType: '유형',
-  colRoles: '역할',
-  colScope: '부서 범위',
-  colStatus: '상태',
-  colActions: '작업',
-  allDepartments: '전체',
-  noRoles: '-',
-  me: '(나)',
-  stActive: '활성',
-  stInactive: '비활성',
-  stLocked: '잠김',
-  stMustChange: '비밀번호 변경 필요',
-  edit: '수정',
-  activate: '활성화',
-  deactivate: '비활성화',
-  unlock: '잠금 해제',
-  tempPassword: '임시 비밀번호 발급',
-  confirmActivateTitle: '계정 활성화',
-  confirmActivate: (id: string) => `${id} 계정을 활성화합니다.`,
-  confirmDeactivateTitle: '계정 비활성화',
-  confirmDeactivate: (id: string) => `${id} 계정을 비활성화합니다. 이 계정의 모든 로그인 세션이 즉시 끊깁니다.`,
-  confirmUnlockTitle: '잠금 해제',
-  confirmUnlock: (id: string) => `${id} 계정의 로그인 잠금을 해제합니다.`,
-  confirmTempTitle: '임시 비밀번호 발급',
-  confirmTemp: (id: string) =>
-    `${id} 계정에 새 임시 비밀번호를 발급합니다. 기존 비밀번호는 더 이상 쓸 수 없고, 이 계정의 로그인 세션이 모두 끊깁니다.`,
-  tempIssuedTitle: '임시 비밀번호가 발급되었습니다',
-  createdTitle: '사용자를 만들었습니다',
-  saved: '저장했습니다.',
-  formCreate: '사용자 추가',
-  formEdit: (id: string) => `사용자 수정 — ${id}`,
-  fLoginId: '로그인 ID',
-  fLoginIdHint: '영문·숫자·._@- 3~64자. 만든 뒤에는 바꿀 수 없습니다.',
-  fName: '이름',
-  fEmail: '이메일 (선택)',
-  fLang: '언어',
-  fType: '계정 유형',
-  fRoles: '역할',
-  fRolesEmpty: '배정할 수 있는 활성 역할이 없습니다.',
-  fRolesUnavailable: '역할 목록을 볼 권한이 없어 역할을 지정할 수 없습니다.',
-  fRolesNotMine: '(내가 갖지 않은 권한 포함)',
-  fScope: '부서 범위',
-  fScopeHint: '아무 부서도 고르지 않으면 전체 부서입니다.',
-  fScopeLimitedHint: '내 부서 범위 안의 부서만 지정할 수 있고, 전체(빈 선택)는 지정할 수 없습니다.',
-  fScopeEmpty: '등록된 활성 부서가 없습니다.',
-  fScopeUnavailable: '부서 목록을 볼 권한이 없어 부서 범위를 지정할 수 없습니다. (지정하지 않으면 전체 부서)',
-  fAdminNote: '기업 관리자는 기업 안의 모든 권한을 가지므로 역할과 부서 범위를 지정하지 않습니다.',
-  fSelfNote: '자신의 계정 유형·역할·부서 범위는 스스로 바꿀 수 없습니다.',
-  fInactiveSuffix: ' (비활성)',
-  cancel: '취소',
-  save: '저장',
-  create: '만들기',
-  saving: '저장 중…',
-};
-
-const LANGS: { value: 'ko' | 'en' | 'zh'; label: string }[] = [
-  { value: 'ko', label: '한국어' },
-  { value: 'en', label: 'English' },
-  { value: 'zh', label: '中文' },
-];
+import { LANGS, useT, type Lang } from '../../../i18n';
+import { LANG_NAME } from '../../../i18n/langs.text';
+import { TEXT } from './page.text';
 
 type ManagedType = 'COMPANY_ADMIN' | 'COMPANY_USER';
-type Lang = 'ko' | 'en' | 'zh';
 
 interface Ref {
   id: string;
@@ -147,6 +80,8 @@ export default function UsersPage() {
 }
 
 function UsersInner() {
+  const UTL = useUserTypeLabel();
+  const T = useT(TEXT);
   const { me, perms, can } = useShell();
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -234,7 +169,7 @@ function UsersInner() {
                   {u.display_name}
                   {u.email ? <div style={{ fontSize: 12, color: '#6b7280' }}>{u.email}</div> : null}
                 </td>
-                <td style={td}>{USER_TYPE_LABEL[u.user_type] ?? u.user_type}</td>
+                <td style={td}>{UTL[u.user_type] ?? u.user_type}</td>
                 <td style={td}>
                   {u.user_type === 'COMPANY_ADMIN' ? T.noRoles : u.roles.length ? u.roles.map((r) => r.name).join(', ') : T.noRoles}
                 </td>
@@ -326,6 +261,7 @@ function UsersInner() {
 }
 
 function StatusBadges({ user }: { user: UserRow }) {
+  const T = useT(TEXT);
   const badges = [];
   if (!user.is_active) badges.push(<Badge key="i" tone="gray">{T.stInactive}</Badge>);
   if (user.locked) badges.push(<Badge key="l" tone="red">{T.stLocked}</Badge>);
@@ -353,6 +289,8 @@ function UserForm({
   onCreated: (loginId: string, tempPassword: string) => void;
   onSaved: () => void;
 }) {
+  const UTL = useUserTypeLabel();
+  const T = useT(TEXT);
   const { perms } = useShell();
   const editing = user !== null;
   const origRoleIds = user?.roles.map((r) => r.id) ?? [];
@@ -476,7 +414,7 @@ function UserForm({
         <LabeledField label={T.fLang}>
           {(id) => (
             <select id={id} style={smallInput} value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
-              {LANGS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+              {LANGS.map((l) => <option key={l} value={l}>{LANG_NAME[l]}</option>)}
             </select>
           )}
         </LabeledField>
@@ -484,11 +422,11 @@ function UserForm({
           {(id) =>
             canChangeType ? (
               <select id={id} style={smallInput} value={userType} onChange={(e) => changeType(e.target.value as ManagedType)}>
-                <option value="COMPANY_USER">{USER_TYPE_LABEL.COMPANY_USER}</option>
-                <option value="COMPANY_ADMIN">{USER_TYPE_LABEL.COMPANY_ADMIN}</option>
+                <option value="COMPANY_USER">{UTL.COMPANY_USER}</option>
+                <option value="COMPANY_ADMIN">{UTL.COMPANY_ADMIN}</option>
               </select>
             ) : (
-              <input id={id} style={{ ...smallInput, background: '#f5f6f8' }} value={USER_TYPE_LABEL[userType]} readOnly />
+              <input id={id} style={{ ...smallInput, background: '#f5f6f8' }} value={UTL[userType]} readOnly />
             )
           }
         </LabeledField>

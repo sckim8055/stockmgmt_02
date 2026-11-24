@@ -4,30 +4,8 @@ import { useShell } from '../../../shell';
 import { api, Button, ErrorText, LabeledField, Modal, smallInput } from '../../../ui';
 import { CustomFieldInputs, draftFromValues, FilterableSelect, listOf, modelLabel, parseCustom, useList, type CustomDraft } from '../shared';
 import type { AssetRow, CustomFieldDef, DepartmentOption, ModelOption } from '../types';
-
-const T = {
-  title: (tag: string) => `자산 수정 — ${tag}`,
-  fModel: '모델',
-  fTag: '자산 태그',
-  fSerial: '시리얼 번호',
-  fDept: '관리 부서',
-  fDeptHint: '관리 부서를 바꾸면 이력에 남습니다.',
-  fLocation: '위치',
-  fPurchaseDate: '구매일',
-  fWarranty: '보증 만료일',
-  fPrice: '구매가',
-  fSupplier: '공급업체',
-  customTitle: '사용자 지정 필드',
-  customHint: '값을 비우면 그 필드의 값을 지웁니다.',
-  inactive: '(사용 안 함)',
-  stateNote: '상태와 보유자는 여기서 바꾸지 않습니다. 상세 화면의 처리 버튼을 쓰세요.',
-  nothing: '바뀐 내용이 없습니다.',
-  priceInvalid: '구매가는 0 이상의 숫자로 입력하세요.',
-  customInvalid: (label: string) => `"${label}" 값의 형식이 올바르지 않습니다.`,
-  cancel: '취소',
-  save: '저장',
-  saving: '저장 중…',
-};
+import { useT } from '../../../i18n';
+import { TEXT } from './edit-dialog.text';
 
 /** 문자열 입력칸의 값. 비어 있으면 null(= 지우기). */
 const orNull = (s: string) => (s.trim() === '' ? null : s.trim());
@@ -47,6 +25,7 @@ export function EditAssetDialog({
   onSaved: () => void;
   onGone: (message: string) => void;
 }) {
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const models = useList<ModelOption>(can('master.model', 'read') ? '/api/master/models?kind=ASSET&includeInactive=true' : null, 'models');
   // 관리 부서 변경은 부서 범위 제한이 없는 사용자만 할 수 있다(서버도 같은 규칙으로 거부한다).

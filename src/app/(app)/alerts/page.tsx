@@ -4,28 +4,16 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { RequireCompany, useShell } from '../../shell';
 import { api, Badge, Button, ErrorText, PageHeader } from '../../ui';
-import { fmtDateTime } from '../assets/shared';
 import { Pager } from '../peripherals/shared';
-import { ALERT_TYPE_LABEL, ALERT_TYPE_TONE, describeAlert, isKnownType, type AlertItem, type AlertPage } from './labels';
+import { ALERT_TYPE_TONE, describeAlert, isKnownType, useAlertLabels, type AlertItem, type AlertPage } from './labels';
+import { useT } from '../../i18n';
+import { TEXT } from './page.text';
+import { useFmt } from '../../i18n/format';
 
 const PAGE_SIZE = 30;
 
-const T = {
-  title: '알림함',
-  loading: '불러오는 중…',
-  empty: '알림이 없습니다.',
-  emptyUnread: '읽지 않은 알림이 없습니다.',
-  unreadOnly: '읽지 않은 것만',
-  markRead: '읽음',
-  markAll: '모두 읽음',
-  unreadMark: '읽지 않음',
-  open: '바로 가기',
-  summary: (total: number, unread: number) => `${total.toLocaleString('ko-KR')}건 · 읽지 않음 ${unread.toLocaleString('ko-KR')}건`,
-  markedAll: (n: number) => `${n.toLocaleString('ko-KR')}건을 읽음으로 표시했습니다.`,
-  listLabel: '알림 목록',
-};
-
 export default function AlertsPage() {
+  const T = useT(TEXT);
   return (
     <RequireCompany>
       {/* useSearchParams 는 Suspense 경계 안에서 써야 한다(Next.js 빌드 규칙). */}
@@ -37,6 +25,7 @@ export default function AlertsPage() {
 }
 
 function AlertsInner() {
+  const T = useT(TEXT);
   const { syncUnread } = useShell();
   const router = useRouter();
   const sp = useSearchParams();
@@ -138,9 +127,12 @@ function AlertsInner() {
 }
 
 function AlertRow({ alert, first, busy, onRead }: { alert: AlertItem; first: boolean; busy: boolean; onRead: () => void }) {
+  const F = useFmt();
+  const AL = useAlertLabels();
+  const T = useT(TEXT);
   const { can } = useShell();
   const unread = alert.read_at === null;
-  const view = describeAlert(alert.type, alert.payload);
+  const view = describeAlert(AL, F.locale, alert.type, alert.payload);
   const link = view.link && can(...view.link.permission) ? view.link.href : null;
   return (
     <li
@@ -151,9 +143,9 @@ function AlertRow({ alert, first, busy, onRead }: { alert: AlertItem; first: boo
     >
       <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
-          {isKnownType(alert.type) ? <Badge tone={ALERT_TYPE_TONE[alert.type]}>{ALERT_TYPE_LABEL[alert.type]}</Badge> : <Badge tone="gray">{alert.type}</Badge>}
+          {isKnownType(alert.type) ? <Badge tone={ALERT_TYPE_TONE[alert.type]}>{AL.type[alert.type]}</Badge> : <Badge tone="gray">{alert.type}</Badge>}
           {unread ? <span style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 600 }}>{T.unreadMark}</span> : null}
-          <time dateTime={alert.created_at} style={{ fontSize: 12, color: '#6b7280' }}>{fmtDateTime(alert.created_at)}</time>
+          <time dateTime={alert.created_at} style={{ fontSize: 12, color: '#6b7280' }}>{F.dateTime(alert.created_at)}</time>
         </div>
         {view.text ? <div style={{ fontWeight: unread ? 600 : undefined }}>{view.text}</div> : null}
         {link ? <Link href={link} style={{ fontSize: 13 }}>{T.open}</Link> : null}

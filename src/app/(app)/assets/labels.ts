@@ -1,28 +1,10 @@
-// 자산 화면이 함께 쓰는 표시 이름. 상태·처리 규칙 자체는 src/lib/assets/transitions.ts 가 정한다.
+// 자산 화면이 함께 쓰는 표시 이름과 상태 규칙. 문구는 labels.text.ts 에 있다. 상태·처리 규칙 자체는 src/lib/assets/transitions.ts 가 정한다.
 import type { AssetAction, AssetState } from '@/lib/assets/transitions';
+import { useLang, type Lang } from '../../i18n';
+import { TEXT } from './labels.text';
 
 export type Substate = 'AVAILABLE' | 'RESERVED' | 'DEFECTIVE' | 'PENDING_DISPOSAL' | 'DISPOSED' | 'SOLD' | 'DONATED';
 export type BadgeTone = 'green' | 'gray' | 'red' | 'amber' | 'blue';
-
-export const STATE_LABEL: Record<AssetState, string> = {
-  ON_ORDER: '입고 예정',
-  IN_STOCK: '재고',
-  IN_USE: '사용 중',
-  MAINTENANCE: '수리 중',
-  MISSING: '분실',
-  RETIRED: '퇴역',
-  VOID: '등록 취소',
-};
-
-export const SUBSTATE_LABEL: Record<Substate, string> = {
-  AVAILABLE: '사용 가능',
-  RESERVED: '예약됨',
-  DEFECTIVE: '불량',
-  PENDING_DISPOSAL: '폐기 대기',
-  DISPOSED: '폐기됨',
-  SOLD: '매각됨',
-  DONATED: '기증됨',
-};
 
 /** 상태별로 고를 수 있는 세부 상태(DB 제약 asset_state_chk 와 같은 조합). */
 export const STATE_SUBSTATES: Record<AssetState, Substate[]> = {
@@ -45,40 +27,32 @@ export const STATE_TONE: Record<AssetState, BadgeTone> = {
   VOID: 'gray',
 };
 
-export const ACTION_LABEL: Record<AssetAction, string> = {
-  RECEIVE: '입고 확정',
-  ASSIGN: '배정',
-  LOAN: '대여',
-  RETURN: '반납',
-  RESERVE: '예약',
-  UNRESERVE: '예약 해제',
-  MARK_DEFECTIVE: '불량 표시',
-  REPAIR_IN: '수리 입고',
-  REPAIR_OUT: '수리 완료',
-  MARK_MISSING: '분실 처리',
-  FOUND: '발견',
-  RETIRE: '퇴역',
-  DISPOSE: '처분',
-  VOID: '등록 취소',
-};
+export type Disposal = 'DISPOSED' | 'SOLD' | 'DONATED';
 
-/** 이력 종류. 처리(ACTION_LABEL)에 등록·수정 같은 이력 전용 종류를 더한다. */
-export const TXN_LABEL: Record<string, string> = {
-  ...ACTION_LABEL,
-  REGISTER: '등록',
-  UPDATE: '정보 수정',
-  CHANGE_DEPARTMENT: '관리 부서 변경',
-  IMPORT_UPDATE: '일괄 수정',
-};
+/** 자산 화면의 표시 이름(현재 언어) */
+export interface AssetLabels {
+  state: Record<AssetState, string>;
+  substate: Record<Substate, string>;
+  action: Record<AssetAction, string>;
+  /** 이력 종류: 처리(action)에 등록·수정 같은 이력 전용 종류를 더한다. */
+  txn: Record<string, string>;
+  disposal: Record<Disposal, string>;
+}
 
-export const DISPOSAL_LABEL: Record<'DISPOSED' | 'SOLD' | 'DONATED', string> = {
-  DISPOSED: '폐기',
-  SOLD: '매각',
-  DONATED: '기증',
-};
+// 사전의 키가 상태·처리 코드와 다르면 여기서 타입 오류가 난다.
+const build = (t: (typeof TEXT)[Lang]): AssetLabels => ({ ...t, txn: { ...t.action, ...t.txnExtra } });
+const LABELS: Record<Lang, AssetLabels> = { ko: build(TEXT.ko), en: build(TEXT.en), zh: build(TEXT.zh) };
 
-export function stateText(state: string, substate: string | null): string {
-  const s = STATE_LABEL[state as AssetState] ?? state;
+export function assetLabels(lang: Lang): AssetLabels {
+  return LABELS[lang];
+}
+
+export function useAssetLabels(): AssetLabels {
+  return LABELS[useLang()];
+}
+
+export function stateText(L: AssetLabels, state: string, substate: string | null): string {
+  const s = (L.state as Record<string, string>)[state] ?? state;
   if (!substate) return s;
-  return `${s} · ${SUBSTATE_LABEL[substate as Substate] ?? substate}`;
+  return `${s} · ${(L.substate as Record<string, string>)[substate] ?? substate}`;
 }

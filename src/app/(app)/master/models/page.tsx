@@ -2,56 +2,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { RequireCompany, useShell } from '../../../shell';
 import { api, Badge, Button, ConfirmDialog, EmptyRow, ErrorText, LabeledField, Modal, Notice, PageHeader, smallInput, Table, td } from '../../../ui';
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
 
 type Kind = 'ASSET' | 'PERIPHERAL';
-
-const T = {
-  title: '모델',
-  add: '모델 추가',
-  loading: '불러오는 중…',
-  empty: '조건에 맞는 모델이 없습니다.',
-  filterKind: '종류',
-  filterCategory: '카테고리',
-  filterQ: '검색',
-  filterQPlaceholder: '제조사 또는 모델명',
-  search: '검색',
-  all: '전체',
-  kind: { ASSET: '자산', PERIPHERAL: '주변기기' } satisfies Record<Kind, string>,
-  includeInactive: '사용 안 함 포함',
-  colManufacturer: '제조사',
-  colName: '모델명',
-  colCategory: '카테고리',
-  colKind: '종류',
-  colStatus: '상태',
-  colActions: '작업',
-  active: '사용',
-  inactive: '사용 안 함',
-  categoryInactive: '(카테고리 사용 안 함)',
-  edit: '수정',
-  activate: '활성화',
-  deactivate: '비활성화',
-  remove: '삭제',
-  saved: '저장했습니다.',
-  categoriesUnavailable: '카테고리 목록을 볼 권한이 없어 모델을 등록하거나 카테고리를 바꿀 수 없습니다.',
-  confirmActivateTitle: '모델 활성화',
-  confirmActivate: (n: string) => `"${n}" 모델을 다시 사용합니다. 자산·재고를 등록할 때 고를 수 있게 됩니다.`,
-  confirmDeactivateTitle: '모델 비활성화',
-  confirmDeactivate: (n: string) => `"${n}" 모델을 비활성화합니다. 기존 자산·재고는 그대로 남고, 새로 등록할 때 고를 수 없게 됩니다.`,
-  confirmDeleteTitle: '모델 삭제',
-  confirmDelete: (n: string) => `"${n}" 모델을 삭제합니다. 자산·주변기기 재고·한계수량에서 쓰는 모델은 삭제할 수 없으며, 그때는 비활성화하세요.`,
-  formCreate: '모델 추가',
-  formEdit: (n: string) => `모델 수정 — ${n}`,
-  fCategory: '카테고리',
-  fCategoryHintCreate: '모델의 종류(자산/주변기기)는 카테고리를 따릅니다.',
-  fCategoryHintEdit: '같은 종류의 카테고리로만 옮길 수 있습니다.',
-  fCategoryPick: '선택하세요',
-  fManufacturer: '제조사',
-  fName: '모델명',
-  cancel: '취소',
-  save: '저장',
-  create: '만들기',
-  saving: '저장 중…',
-};
 
 interface ModelRow {
   id: string;
@@ -83,6 +37,7 @@ export default function ModelsPage() {
 }
 
 function ModelsInner() {
+  const T = useT(TEXT);
   const { can } = useShell();
   const [kind, setKind] = useState<Kind | ''>('');
   const [categoryId, setCategoryId] = useState('');
@@ -261,6 +216,7 @@ function ModelForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const T = useT(TEXT);
   const [categoryId, setCategoryId] = useState(model?.category_id ?? '');
   const [manufacturer, setManufacturer] = useState(model?.manufacturer ?? '');
   const [name, setName] = useState(model?.name ?? '');

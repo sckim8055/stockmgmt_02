@@ -2,35 +2,11 @@
 import { useState, type FormEvent } from 'react';
 import { useShell } from '../../shell';
 import { api, Button, ErrorText, LabeledField, Modal, Notice, smallInput } from '../../ui';
-import { STATE_LABEL } from './labels';
+import { useAssetLabels } from './labels';
 import { CustomFieldInputs, FilterableSelect, listOf, modelLabel, parseCustom, useList, type CustomDraft, type Loaded } from './shared';
 import type { CustomFieldDef, DepartmentOption, ModelOption } from './types';
-
-const T = {
-  title: '자산 등록',
-  fModel: '모델',
-  fModelNone: '등록할 수 있는 자산용 모델이 없습니다. 기준 정보 > 모델에서 먼저 등록하세요.',
-  fModelUnavailable: '모델 목록을 볼 권한이 없어 자산을 등록할 수 없습니다.',
-  fTag: '자산 태그',
-  fTagHint: '기업 안에서 고유합니다. 등록 취소된 자산의 태그도 다시 쓸 수 없습니다.',
-  fSerial: '시리얼 번호 (선택)',
-  fDept: '관리 부서',
-  fDeptDefault: '지정 안 함 (기본 부서)',
-  fDeptChoose: '선택하세요',
-  fDeptHint: '내 부서 범위 안의 부서에만 등록할 수 있습니다.',
-  fLocation: '위치 (선택)',
-  fPurchaseDate: '구매일 (선택)',
-  fWarranty: '보증 만료일 (선택)',
-  fState: '처음 상태',
-  fPrice: '구매가 (선택)',
-  fSupplier: '공급업체 (선택)',
-  customTitle: '사용자 지정 필드',
-  priceInvalid: '구매가는 0 이상의 숫자로 입력하세요.',
-  customInvalid: (label: string) => `"${label}" 값의 형식이 올바르지 않습니다.`,
-  cancel: '취소',
-  create: '등록',
-  saving: '저장 중…',
-};
+import { useT } from '../../i18n';
+import { TEXT } from './create-dialog.text';
 
 export function CreateAssetDialog({
   models,
@@ -43,6 +19,8 @@ export function CreateAssetDialog({
   onClose: () => void;
   onCreated: (assetId: string, assetTag: string) => void;
 }) {
+  const L = useAssetLabels();
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const canPrice = can('asset.item.purchase_price', 'update');
   const canSupplier = can('asset.item.supplier', 'update');
@@ -149,8 +127,8 @@ export function CreateAssetDialog({
         <LabeledField label={T.fState}>
           {(id) => (
             <select id={id} style={smallInput} value={initialState} onChange={(e) => setInitialState(e.target.value === 'ON_ORDER' ? 'ON_ORDER' : 'IN_STOCK')}>
-              <option value="IN_STOCK">{STATE_LABEL.IN_STOCK}</option>
-              <option value="ON_ORDER">{STATE_LABEL.ON_ORDER}</option>
+              <option value="IN_STOCK">{L.state.IN_STOCK}</option>
+              <option value="ON_ORDER">{L.state.ON_ORDER}</option>
             </select>
           )}
         </LabeledField>

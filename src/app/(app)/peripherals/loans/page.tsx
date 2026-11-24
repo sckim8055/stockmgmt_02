@@ -3,50 +3,24 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { RequireCompany, useShell } from '../../../shell';
 import { api, Badge, Button, EmptyRow, ErrorText, PageHeader, smallInput, Table, td } from '../../../ui';
-import { fmtDateTime, listOf, PersonPicker, useDebounced, useList, type PersonRef } from '../../assets/shared';
+import { listOf, PersonPicker, useDebounced, useList, type PersonRef } from '../../assets/shared';
 import type { DepartmentOption } from '../../assets/types';
-import { fmtDate, fmtQty, LOAN_FILTER_LABEL, LOAN_STATUS_LABEL } from '../labels';
+import { usePeripheralLabels } from '../labels';
 import { FilterBox, filterSelect, Pager } from '../shared';
 import type { LoanPage, LoanRow, LoanStatus } from '../types';
 import { LoanDialog } from './loan-dialog';
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
+import { useFmt } from '../../../i18n/format';
 
 const PAGE_SIZE = 50;
-
-const T = {
-  title: '주변기기 대여 현황',
-  loading: '불러오는 중…',
-  empty: '조건에 맞는 대여가 없습니다.',
-  filterQ: '검색',
-  filterQPlaceholder: '직원·제조사·모델',
-  filterStatus: '상태',
-  filterDept: '관리 부서',
-  filterPerson: '직원',
-  overdueOnly: '기한 지난 것만',
-  all: '전체',
-  inactive: '(사용 안 함)',
-  reset: '조건 초기화',
-  colPerson: '직원',
-  colModel: '모델',
-  colDept: '관리 부서',
-  colQty: '대여 수량',
-  colOutstanding: '미반납 수량',
-  colLoaned: '대여일',
-  colDue: '반납 기한',
-  colStatus: '상태',
-  colActions: '작업',
-  personLeft: '퇴사자',
-  overdue: '기한 지남',
-  breakdown: (returned: number, lost: number) => `반납 ${fmtQty(returned)} · 분실 ${fmtQty(lost)}`,
-  returnAction: '반납',
-  lossAction: '분실 처리',
-  total: (n: number) => `총 ${n.toLocaleString('ko-KR')}건`,
-};
 
 /** URL 에서 읽어 API 로 그대로 넘기는 조건. personName 은 화면 표시용이라 넘기지 않는다. */
 const API_KEYS = ['q', 'status', 'overdue', 'departmentId', 'personId', 'page'] as const;
 const STATUS_VALUES = ['OPEN', 'CLOSED', 'ALL'] as const;
 
 export default function LoansPage() {
+  const T = useT(TEXT);
   return (
     <RequireCompany>
       <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
@@ -57,6 +31,8 @@ export default function LoansPage() {
 }
 
 function LoansInner() {
+  const L = usePeripheralLabels();
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const router = useRouter();
   const sp = useSearchParams();
@@ -143,7 +119,7 @@ function LoansInner() {
           {(id) => (
             <select id={id} value={status} onChange={(e) => setParams({ status: e.target.value === 'OPEN' ? null : e.target.value })} style={filterSelect}>
               {STATUS_VALUES.map((s) => (
-                <option key={s} value={s}>{LOAN_FILTER_LABEL[s]}</option>
+                <option key={s} value={s}>{L.loanFilter[s]}</option>
               ))}
             </select>
           )}
@@ -223,6 +199,9 @@ function LoanTableRow({
   canAct: boolean;
   onAction: (action: 'RETURN' | 'LOAN_LOSS') => void;
 }) {
+  const F = useFmt();
+  const L = usePeripheralLabels();
+  const T = useT(TEXT);
   const open = l.status === 'OPEN';
   return (
     <tr style={l.overdue ? { background: '#fff5f5' } : undefined}>
@@ -232,17 +211,17 @@ function LoanTableRow({
       </td>
       <td style={td}>{l.manufacturer} {l.model_name}</td>
       <td style={td}>{l.department_name}</td>
-      <td style={{ ...td, textAlign: 'right' }}>{fmtQty(l.qty)}</td>
+      <td style={{ ...td, textAlign: 'right' }}>{F.num(l.qty)}</td>
       <td style={{ ...td, textAlign: 'right' }}>
-        {fmtQty(l.outstanding_qty)}
+        {F.num(l.outstanding_qty)}
         {l.returned_qty > 0 || l.lost_qty > 0 ? <div style={{ color: '#6b7280', fontSize: 12 }}>{T.breakdown(l.returned_qty, l.lost_qty)}</div> : null}
       </td>
-      <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={l.loaned_at} title={fmtDateTime(l.loaned_at)}>{fmtDate(l.loaned_at)}</time></td>
+      <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={l.loaned_at} title={F.dateTime(l.loaned_at)}>{F.date(l.loaned_at)}</time></td>
       <td style={{ ...td, whiteSpace: 'nowrap', color: l.overdue ? '#991b1b' : undefined, fontWeight: l.overdue ? 600 : undefined }}>
         {l.due_date ?? ''}
         {l.overdue ? <> <Badge tone="red">{T.overdue}</Badge></> : null}
       </td>
-      {showStatus ? <td style={td}><Badge tone={STATUS_TONE[l.status]}>{LOAN_STATUS_LABEL[l.status]}</Badge></td> : null}
+      {showStatus ? <td style={td}><Badge tone={STATUS_TONE[l.status]}>{L.loanStatus[l.status]}</Badge></td> : null}
       {canAct ? (
         <td style={{ ...td, whiteSpace: 'nowrap' }}>
           {open ? (

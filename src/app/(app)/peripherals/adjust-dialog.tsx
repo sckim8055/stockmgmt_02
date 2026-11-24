@@ -1,26 +1,11 @@
 'use client';
 import { useState, type FormEvent } from 'react';
 import { api, Button, ErrorText, Modal } from '../../ui';
-import { fmtQty, signed, stockLabel } from './labels';
-import { NoteField, parseQty, QtyField } from './shared';
+import { stockLabel } from './labels';
+import { NoteField, useParseQty, QtyField } from './shared';
 import { MAX_QTY, type StockRow } from './types';
-
-const T = {
-  title: { ADJUST: '실사 조정', DISPOSE: '폐기' },
-  current: (n: number) => `현재 보유 수량: ${fmtQty(n)}개`,
-  adjustIntro: '실제로 센 수량을 입력하면 보유 수량을 그 값으로 맞춥니다. 대여 중 수량은 바뀌지 않습니다.',
-  fCounted: '실제로 센 수량',
-  diff: (d: number, after: number) => `차이 ${signed(d)}개 → 조정 뒤 ${fmtQty(after)}개`,
-  noChange: '현재 수량과 같습니다. 바꿀 것이 없습니다.',
-  disposeWarn: '폐기한 수량은 보유 수량에서 빠지고 되돌릴 수 없습니다. 잘못 폐기했다면 실사 조정으로 다시 맞춰야 합니다.',
-  fQty: '폐기 수량',
-  fReason: '사유 (필수)',
-  reasonRequired: '사유를 입력하세요.',
-  confirm: '폐기하면 되돌릴 수 없다는 것을 확인했습니다.',
-  done: { ADJUST: (n: number) => `조정했습니다. (현재 보유 ${fmtQty(n)}개)`, DISPOSE: (n: number) => `폐기했습니다. (남은 보유 ${fmtQty(n)}개)` },
-  cancel: '취소',
-  processing: '처리 중…',
-};
+import { useT } from '../../i18n';
+import { TEXT } from './adjust-dialog.text';
 
 /** 실사 조정(ADJUST)·폐기(DISPOSE). 둘 다 사유가 필수다. */
 export function AdjustDialog({
@@ -36,6 +21,8 @@ export function AdjustDialog({
   onDone: (message: string) => void;
   onConflict: (message: string) => void;
 }) {
+  const T = useT(TEXT);
+  const parseQty = useParseQty();
   const [qty, setQty] = useState(action === 'ADJUST' ? String(stock.on_hand_qty) : '1');
   const [note, setNote] = useState('');
   const [confirmed, setConfirmed] = useState(false);

@@ -2,41 +2,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { RequireCompany, useShell } from '../../../shell';
 import { api, Badge, Button, ConfirmDialog, EmptyRow, ErrorText, LabeledField, Modal, Notice, PageHeader, smallInput, Table, td } from '../../../ui';
-
-const T = {
-  title: '부서',
-  add: '부서 추가',
-  loading: '불러오는 중…',
-  empty: '등록된 부서가 없습니다.',
-  colName: '이름',
-  colStatus: '상태',
-  colActions: '작업',
-  defaultBadge: '기본 부서',
-  active: '사용',
-  inactive: '사용 안 함',
-  edit: '이름 변경',
-  activate: '활성화',
-  deactivate: '비활성화',
-  remove: '삭제',
-  saved: '저장했습니다.',
-  scopedNote: '부서 범위가 제한된 계정은 부서를 등록하거나 변경할 수 없습니다. 조회만 할 수 있습니다.',
-  defaultNote: '기본 부서는 관리 부서를 지정하지 않은 자산이 들어가는 부서입니다. 비활성화하거나 삭제할 수 없습니다.',
-  confirmActivateTitle: '부서 활성화',
-  confirmActivate: (n: string) => `"${n}" 부서를 다시 사용합니다. 새 자산·직원·사용자 범위에서 고를 수 있게 됩니다.`,
-  confirmDeactivateTitle: '부서 비활성화',
-  confirmDeactivate: (n: string) =>
-    `"${n}" 부서를 비활성화합니다. 이미 이 부서에 속한 자산·직원·사용자 범위는 그대로 남고, 새 기록에서만 고를 수 없게 됩니다.`,
-  confirmDeleteTitle: '부서 삭제',
-  confirmDelete: (n: string) =>
-    `"${n}" 부서를 삭제합니다. 자산·재고·직원·사용자 범위·이력 등 어디에서든 쓰인 부서는 삭제할 수 없으며, 그때는 비활성화하세요.`,
-  formCreate: '부서 추가',
-  formEdit: (n: string) => `부서 이름 변경 — ${n}`,
-  fName: '이름',
-  cancel: '취소',
-  save: '저장',
-  create: '만들기',
-  saving: '저장 중…',
-};
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
 
 interface DepartmentRow {
   id: string;
@@ -56,6 +23,7 @@ export default function DepartmentsPage() {
 }
 
 function DepartmentsInner() {
+  const T = useT(TEXT);
   const { can, perms } = useShell();
   const [rows, setRows] = useState<DepartmentRow[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -162,6 +130,7 @@ function DepartmentsInner() {
 }
 
 function DepartmentForm({ dept, onClose, onSaved }: { dept: DepartmentRow | null; onClose: () => void; onSaved: () => void }) {
+  const T = useT(TEXT);
   const [name, setName] = useState(dept?.name ?? '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);

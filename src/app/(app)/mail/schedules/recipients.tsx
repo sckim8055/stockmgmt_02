@@ -4,28 +4,8 @@ import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, CheckboxList, ErrorText, Notice, smallInput } from '../../../ui';
 import type { Loaded } from '../../assets/shared';
 import { EMAIL_RE, MAX_EMAIL, MAX_RECIPIENTS, type ScheduleRecipient } from '../labels';
-
-const T = {
-  legend: '받는 사람',
-  count: (n: number) => `${n} / ${MAX_RECIPIENTS}명`,
-  accounts: '계정',
-  accountsHint: '이메일이 등록된 활성 계정만 고를 수 있습니다.',
-  accountsEmpty: '고를 수 있는 계정이 없습니다.',
-  accountsLoading: '계정 목록을 불러오는 중…',
-  accountsDenied: '계정 목록을 볼 권한(사용자 관리 조회)이 없어 계정을 새로 고를 수 없습니다. 이메일 주소를 직접 입력하세요.',
-  accountUnavailable: '(지금은 고를 수 없음: 비활성이거나 이메일 없음)',
-  filter: '계정 찾기',
-  filterPlaceholder: '이름·로그인 ID·이메일',
-  current: '지금 받는 계정',
-  emails: '이메일 주소 직접 입력',
-  emailPlaceholder: 'name@example.com',
-  add: '추가',
-  remove: (v: string) => `${v} 빼기`,
-  emailInvalid: '이메일 주소 형식이 올바르지 않습니다.',
-  emailTooLong: `이메일 주소는 ${MAX_EMAIL}자까지입니다.`,
-  emailDup: '이미 추가한 주소입니다.',
-  tooMany: `받는 사람은 최대 ${MAX_RECIPIENTS}명입니다.`,
-};
+import { useT } from '../../../i18n';
+import { TEXT } from './recipients.text';
 
 export interface AccountOption {
   id: string;
@@ -61,6 +41,7 @@ export function RecipientsField({
   value: RecipientDraft;
   onChange: (next: RecipientDraft) => void;
 }) {
+  const T = useT(TEXT);
   const emailId = useId();
   const filterId = useId();
   const [emailInput, setEmailInput] = useState('');

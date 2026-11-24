@@ -1,22 +1,10 @@
 'use client';
 import { useState, type FormEvent } from 'react';
 import { api, Button, ErrorText, Modal } from '../../../ui';
-import { fmtQty } from '../labels';
-import { NoteField, parseQty, QtyField } from '../shared';
+import { NoteField, useParseQty, QtyField } from '../shared';
 import type { LoanRow } from '../types';
-
-const T = {
-  title: { RETURN: '반납', LOAN_LOSS: '분실 처리' },
-  summary: (person: string, model: string, n: number) => `${person} · ${model} · 미반납 ${fmtQty(n)}개`,
-  returnIntro: '돌려받은 수량만큼 보유 수량에 다시 더합니다. 일부만 반납하면 대여는 미반납으로 남습니다.',
-  lossWarn: '분실 처리한 수량은 재고로 돌아오지 않습니다. 대여 중 수량에서만 빠지고, 보유 수량은 그대로입니다. 되돌릴 수 없습니다.',
-  fQty: { RETURN: '반납 수량', LOAN_LOSS: '분실 수량' },
-  fNote: { RETURN: '메모 (선택)', LOAN_LOSS: '메모 (선택, 분실 경위 등)' },
-  confirm: '분실 수량은 재고로 돌아오지 않는다는 것을 확인했습니다.',
-  done: { RETURN: (n: number) => `반납했습니다. (남은 미반납 ${fmtQty(n)}개)`, LOAN_LOSS: (n: number) => `분실 처리했습니다. (남은 미반납 ${fmtQty(n)}개)` },
-  cancel: '취소',
-  processing: '처리 중…',
-};
+import { useT } from '../../../i18n';
+import { TEXT } from './loan-dialog.text';
 
 /** 대여의 반납(RETURN)·분실 처리(LOAN_LOSS). 수량은 미반납 수량 이하. */
 export function LoanDialog({
@@ -32,6 +20,8 @@ export function LoanDialog({
   onDone: (message: string) => void;
   onConflict: (message: string) => void;
 }) {
+  const T = useT(TEXT);
+  const parseQty = useParseQty();
   const [qty, setQty] = useState(String(loan.outstanding_qty));
   const [note, setNote] = useState('');
   const [confirmed, setConfirmed] = useState(false);

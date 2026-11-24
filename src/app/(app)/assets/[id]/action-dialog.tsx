@@ -3,32 +3,11 @@ import { useState, type FormEvent } from 'react';
 import type { AssetAction } from '@/lib/assets/transitions';
 import { api, Button, ErrorText, LabeledField, Modal, smallInput } from '../../../ui';
 import { actionUrl, DESTRUCTIVE } from '../actions';
-import { ACTION_LABEL, DISPOSAL_LABEL } from '../labels';
+import { useAssetLabels, type Disposal } from '../labels';
 import { PersonPicker, todayIso, type PersonRef } from '../shared';
 import type { AssetRow } from '../types';
-
-const T = {
-  title: (action: string, tag: string) => `${action} — ${tag}`,
-  fPerson: '받는 직원',
-  fDue: '반납 기한',
-  fDefective: '불량 상태로 반납 (사용할 수 없는 재고로 둡니다)',
-  fDisposal: '처분 방식',
-  fLocation: '위치',
-  fLocationHint: '바꾸지 않으면 현재 위치를 그대로 둡니다. 비우면 위치를 지웁니다.',
-  fNote: '메모 (선택)',
-  personRequired: '받는 직원을 고르세요.',
-  dueRequired: '반납 기한을 입력하세요.',
-  disposalRequired: '처분 방식을 고르세요.',
-  confirm: '이 처리는 되돌리기 어렵다는 것을 확인했습니다.',
-  warn: {
-    RETIRE: '자산을 퇴역(폐기 대기) 상태로 바꿉니다. 퇴역한 자산은 다시 배정할 수 없고, 처분만 할 수 있습니다.',
-    DISPOSE: '자산을 처분 완료로 기록합니다. 처분된 자산은 더 이상 어떤 처리도 할 수 없습니다.',
-    VOID: '잘못 등록한 자산을 등록 취소합니다. 등록 취소된 자산은 수정할 수 없고 기본 목록에서 빠지며, 자산 태그도 다시 쓸 수 없습니다.',
-    MARK_MISSING: '자산을 분실 상태로 바꿉니다. 마지막 보유자 정보는 남겨 둡니다.',
-  } as Partial<Record<AssetAction, string>>,
-  cancel: '취소',
-  processing: '처리 중…',
-};
+import { useT } from '../../../i18n';
+import { TEXT } from './action-dialog.text';
 
 const NEEDS_PERSON: ReadonlySet<AssetAction> = new Set<AssetAction>(['ASSIGN', 'LOAN']);
 // 자산이 실제로 옮겨지는 처리에서만 위치를 함께 받는다.
@@ -51,6 +30,8 @@ export function ActionDialog({
   onDone: () => void;
   onConflict: (message: string) => void;
 }) {
+  const L = useAssetLabels();
+  const T = useT(TEXT);
   const [person, setPerson] = useState<PersonRef | null>(null);
   const [dueDate, setDueDate] = useState('');
   const [defective, setDefective] = useState(false);
@@ -92,7 +73,7 @@ export function ActionDialog({
     else setError(r.error.message);
   }
 
-  const label = ACTION_LABEL[action];
+  const label = L.action[action];
   const warn = T.warn[action];
   return (
     <Modal title={T.title(label, asset.asset_tag)} onClose={onClose} width={480}>
@@ -121,8 +102,8 @@ export function ActionDialog({
             {(id) => (
               <select id={id} required style={smallInput} value={disposal} onChange={(e) => setDisposal(e.target.value as typeof disposal)}>
                 <option value="" />
-                {(Object.keys(DISPOSAL_LABEL) as (keyof typeof DISPOSAL_LABEL)[]).map((k) => (
-                  <option key={k} value={k}>{DISPOSAL_LABEL[k]}</option>
+                {(Object.keys(L.disposal) as Disposal[]).map((k) => (
+                  <option key={k} value={k}>{L.disposal[k]}</option>
                 ))}
               </select>
             )}

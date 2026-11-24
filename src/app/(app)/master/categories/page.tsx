@@ -2,53 +2,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { RequireCompany, useShell } from '../../../shell';
 import { api, Badge, Button, ConfirmDialog, EmptyRow, ErrorText, LabeledField, Modal, PageHeader, smallInput, Table, td } from '../../../ui';
+import { useT } from '../../../i18n';
+import { TEXT } from './page.text';
 
 type Kind = 'ASSET' | 'PERIPHERAL';
-
-const T = {
-  title: '카테고리',
-  add: '카테고리 추가',
-  loading: '불러오는 중…',
-  empty: '조건에 맞는 카테고리가 없습니다.',
-  filterKind: '종류',
-  kindAll: '전체',
-  kind: { ASSET: '자산', PERIPHERAL: '주변기기' } satisfies Record<Kind, string>,
-  includeInactive: '사용 안 함 포함',
-  colName: '이름',
-  colKind: '종류',
-  colNameKo: '한국어 이름',
-  colNameZh: '중국어 이름',
-  colSort: '순서',
-  colModels: '모델 수',
-  colStatus: '상태',
-  colActions: '작업',
-  active: '사용',
-  inactive: '사용 안 함',
-  edit: '수정',
-  activate: '활성화',
-  deactivate: '비활성화',
-  remove: '삭제',
-  saved: '저장했습니다.',
-  confirmActivateTitle: '카테고리 활성화',
-  confirmActivate: (n: string) => `"${n}" 카테고리를 다시 사용합니다. 새 모델을 등록할 때 고를 수 있게 됩니다.`,
-  confirmDeactivateTitle: '카테고리 비활성화',
-  confirmDeactivate: (n: string) => `"${n}" 카테고리를 비활성화합니다. 기존 모델은 그대로 남고, 새 모델을 등록할 때 고를 수 없게 됩니다.`,
-  confirmDeleteTitle: '카테고리 삭제',
-  confirmDelete: (n: string) => `"${n}" 카테고리를 삭제합니다. 모델이나 한계수량 설정이 있는 카테고리는 삭제할 수 없으며, 그때는 비활성화하세요.`,
-  formCreate: '카테고리 추가',
-  formEdit: (n: string) => `카테고리 수정 — ${n}`,
-  fKind: '종류',
-  fKindLocked: '모델이 등록된 카테고리는 종류를 바꿀 수 없습니다.',
-  fName: '이름 (기본)',
-  fNameKo: '한국어 이름 (선택)',
-  fNameZh: '중국어 이름 (선택)',
-  fSort: '표시 순서',
-  fSortHint: '작은 숫자가 먼저 나옵니다.',
-  cancel: '취소',
-  save: '저장',
-  create: '만들기',
-  saving: '저장 중…',
-};
 
 interface CategoryRow {
   id: string;
@@ -72,6 +29,7 @@ export default function CategoriesPage() {
 }
 
 function CategoriesInner() {
+  const T = useT(TEXT);
   const { can } = useShell();
   const [kind, setKind] = useState<Kind | ''>('');
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -194,6 +152,7 @@ function CategoriesInner() {
 }
 
 function CategoryForm({ cat, onClose, onSaved }: { cat: CategoryRow | null; onClose: () => void; onSaved: () => void }) {
+  const T = useT(TEXT);
   const [kind, setKind] = useState<Kind>(cat?.kind ?? 'ASSET');
   const [name, setName] = useState(cat?.name ?? '');
   const [nameKo, setNameKo] = useState(cat?.name_ko ?? '');

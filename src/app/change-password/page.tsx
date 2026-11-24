@@ -1,8 +1,12 @@
 'use client';
 import { useState, type FormEvent } from 'react';
+import { useT } from '../i18n';
+import { LangSwitcher } from '../i18n/switcher';
 import { button, card, ErrorText, Field, input, postJson } from '../ui';
+import { TEXT } from './page.text';
 
 export default function ChangePasswordPage() {
+  const T = useT(TEXT);
   const [currentPassword, setCurrent] = useState('');
   const [newPassword, setNew] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -12,15 +16,15 @@ export default function ChangePasswordPage() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (newPassword !== confirm) {
-      setError('새 비밀번호가 서로 다릅니다.');
+      setError(T.mismatch);
       return;
     }
     setBusy(true);
     setError('');
-    const { ok, data } = await postJson('/api/auth/change-password', { currentPassword, newPassword });
+    const r = await postJson<{ ok: true }>('/api/auth/change-password', { currentPassword, newPassword });
     setBusy(false);
-    if (!ok) {
-      setError(data?.error?.message ?? '변경에 실패했습니다.');
+    if (!r.ok) {
+      setError(r.message ?? T.failed);
       return;
     }
     window.location.href = '/';
@@ -28,20 +32,23 @@ export default function ChangePasswordPage() {
 
   return (
     <main style={card}>
-      <h1 style={{ fontSize: 20, marginTop: 0 }}>비밀번호 변경</h1>
-      <p style={{ fontSize: 13, color: '#4b5563' }}>10자 이상, 영문 대·소문자·숫자·기호 중 3가지 이상을 섞어야 합니다.</p>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <LangSwitcher />
+      </div>
+      <h1 style={{ fontSize: 20, marginTop: 0 }}>{T.title}</h1>
+      <p style={{ fontSize: 13, color: '#4b5563' }}>{T.rule}</p>
       <form onSubmit={submit}>
-        <Field label="현재(임시) 비밀번호">
+        <Field label={T.current}>
           <input style={input} type="password" value={currentPassword} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
         </Field>
-        <Field label="새 비밀번호">
+        <Field label={T.next}>
           <input style={input} type="password" value={newPassword} onChange={(e) => setNew(e.target.value)} autoComplete="new-password" required />
         </Field>
-        <Field label="새 비밀번호 확인">
+        <Field label={T.confirm}>
           <input style={input} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required />
         </Field>
         <ErrorText>{error}</ErrorText>
-        <button style={button} disabled={busy}>{busy ? '변경 중…' : '변경'}</button>
+        <button style={button} disabled={busy}>{busy ? T.changing : T.submit}</button>
       </form>
     </main>
   );

@@ -3,28 +3,11 @@ import { useState, type FormEvent } from 'react';
 import { useShell } from '../../shell';
 import { api, Button, ErrorText, LabeledField, Modal, Notice, smallInput } from '../../ui';
 import { PersonPicker, todayIso, type PersonRef } from '../assets/shared';
-import { fmtQty, stockLabel } from './labels';
-import { NoteField, parseQty, QtyField } from './shared';
+import { stockLabel } from './labels';
+import { NoteField, useParseQty, QtyField } from './shared';
 import type { StockRow } from './types';
-
-const T = {
-  title: { ISSUE: '지급', LOAN: '대여' },
-  intro: {
-    ISSUE: '돌려받지 않는 지급입니다. 보유 수량에서 빠집니다.',
-    LOAN: '돌려받을 대여입니다. 반납·분실은 대여 현황에서 처리합니다.',
-  },
-  available: (n: number) => `현재 보유 ${fmtQty(n)}개`,
-  fPerson: '받는 직원',
-  fQty: '수량',
-  fDue: '반납 기한 (선택)',
-  fLocation: '사용 위치 메모 (선택)',
-  fNote: '메모 (선택)',
-  personRequired: '받는 직원을 고르세요.',
-  personUnavailable: '직원 명부를 볼 권한이 없어 받는 직원을 고를 수 없습니다.',
-  done: { ISSUE: (n: number) => `지급했습니다. (남은 보유 ${fmtQty(n)}개)`, LOAN: (n: number) => `대여했습니다. (남은 보유 ${fmtQty(n)}개)` },
-  cancel: '취소',
-  processing: '처리 중…',
-};
+import { useT } from '../../i18n';
+import { TEXT } from './issue-dialog.text';
 
 /**
  * 지급(ISSUE)·대여(LOAN). 수량 상한은 화면 안내용이고 서버가 잠금 뒤에 다시 검사한다.
@@ -43,6 +26,8 @@ export function IssueDialog({
   onDone: (message: string) => void;
   onConflict: (message: string) => void;
 }) {
+  const T = useT(TEXT);
+  const parseQty = useParseQty();
   const { can } = useShell();
   const canPickPerson = can('master.person', 'read');
   const [person, setPerson] = useState<PersonRef | null>(null);

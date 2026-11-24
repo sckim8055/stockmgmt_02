@@ -359,3 +359,27 @@ describe('처리 권한', () => {
     }
   });
 });
+
+describe('기준 정보와의 경합', () => {
+  it('배정과 퇴사 처리가 동시에 와도, 퇴사한 직원이 자산을 보유하는 일은 없다', async () => {
+    const { POST: deactivatePerson } = await import('@/app/api/master/persons/[id]/deactivate/route');
+    const o = await owner();
+    for (let i = 0; i < 12; i++) {
+      const personId = (await o.query("INSERT INTO app.person (company_id, name) VALUES ($1, $2) RETURNING id", [A.id, uniq('Race')])).rows[0].id as string;
+      const a = (await create('admin')).data.assetId;
+      const calls = [
+        act(assignRoute, 'admin', a, { action: 'ASSIGN', holderPersonId: personId }),
+        call(withId(deactivatePerson as Handler, personId), { method: 'POST', cookie: cookie.admin }),
+      ];
+      const [assign, deactivate] = await Promise.all(i % 2 ? calls.reverse() : calls).then((r) => (i % 2 ? r.reverse() : r));
+      const row = await one(
+        'SELECT p.is_active, (SELECT count(*)::int FROM app.asset WHERE holder_person_id = p.id) AS held FROM app.person p WHERE p.id = $1',
+        [personId],
+      );
+      expect(row.is_active === false && row.held > 0, `i=${i} assign=${assign!.status} deactivate=${deactivate!.status}`).toBe(false);
+      expect([assign!.status, deactivate!.status].sort(), `i=${i}`).toEqual(expect.arrayContaining([200]));
+      expect([200, 400]).toContain(assign!.status);
+      expect([200, 409]).toContain(deactivate!.status);
+    }
+  });
+});

@@ -23,6 +23,14 @@ const T = {
   navUsers: '사용자 관리',
   navRoles: '역할 관리',
   navCompanies: '기업 관리',
+  navAssets: '자산',
+  navMasterGroup: '기준 정보',
+  navCategories: '카테고리',
+  navModels: '모델',
+  navDepartments: '부서',
+  navPersons: '직원',
+  navCustomFields: '사용자 지정 필드',
+  navAdminGroup: '관리',
   navLabel: '주 메뉴',
   pickCompany: '상단 바에서 작업할 기업을 먼저 선택하세요.',
 };
@@ -248,35 +256,68 @@ function TopBar({
   );
 }
 
+interface NavItem {
+  href: string;
+  label: string;
+}
+interface NavSection {
+  /** 묶음 제목. 없으면 제목 없이 항목만 그린다. */
+  title?: string;
+  items: NavItem[];
+}
+
 function SideNav({ me, can }: { me: Me; can: (resource: string, operation: string) => boolean }) {
   const pathname = usePathname();
-  const items: { href: string; label: string }[] = [{ href: '/', label: T.navHome }];
-  if (can('admin.user', 'read')) items.push({ href: '/admin/users', label: T.navUsers });
-  if (can('admin.role', 'read')) items.push({ href: '/admin/roles', label: T.navRoles });
-  if (me.userType === 'SYSTEM_ADMIN') items.push({ href: '/system/companies', label: T.navCompanies });
+  const main: NavItem[] = [{ href: '/', label: T.navHome }];
+  if (can('asset.item', 'read')) main.push({ href: '/assets', label: T.navAssets });
+
+  const master: NavItem[] = [];
+  if (can('master.category', 'read')) master.push({ href: '/master/categories', label: T.navCategories });
+  if (can('master.model', 'read')) master.push({ href: '/master/models', label: T.navModels });
+  if (can('master.department', 'read')) master.push({ href: '/master/departments', label: T.navDepartments });
+  if (can('master.person', 'read')) master.push({ href: '/master/persons', label: T.navPersons });
+  if (can('master.custom_field', 'read')) master.push({ href: '/master/custom-fields', label: T.navCustomFields });
+
+  const admin: NavItem[] = [];
+  if (can('admin.user', 'read')) admin.push({ href: '/admin/users', label: T.navUsers });
+  if (can('admin.role', 'read')) admin.push({ href: '/admin/roles', label: T.navRoles });
+  if (me.userType === 'SYSTEM_ADMIN') admin.push({ href: '/system/companies', label: T.navCompanies });
+
+  const sections: NavSection[] = [
+    { items: main },
+    { title: T.navMasterGroup, items: master },
+    { title: T.navAdminGroup, items: admin },
+  ].filter((sec) => sec.items.length > 0);
 
   return (
     <nav aria-label={T.navLabel} style={{ width: 180, flexShrink: 0, background: '#fff', borderRight: '1px solid #e2e5ea', padding: '14px 0' }}>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {items.map((it) => {
-          const active = it.href === '/' ? pathname === '/' : pathname === it.href || pathname.startsWith(it.href + '/');
-          return (
-            <li key={it.href}>
-              <Link
-                href={it.href}
-                aria-current={active ? 'page' : undefined}
-                style={{
-                  display: 'block', padding: '8px 18px', fontSize: 14, textDecoration: 'none',
-                  color: active ? '#1d4ed8' : '#1f2937', background: active ? '#eef4ff' : 'transparent',
-                  borderLeft: active ? '3px solid #2563eb' : '3px solid transparent',
-                }}
-              >
-                {it.label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+      {sections.map((sec, i) => (
+        <div key={sec.title ?? `section-${i}`} style={{ marginTop: i === 0 ? 0 : 12 }}>
+          {sec.title ? (
+            <div style={{ padding: '4px 18px', fontSize: 12, fontWeight: 600, color: '#6b7280' }}>{sec.title}</div>
+          ) : null}
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={sec.title}>
+            {sec.items.map((it) => {
+              const active = it.href === '/' ? pathname === '/' : pathname === it.href || pathname.startsWith(it.href + '/');
+              return (
+                <li key={it.href}>
+                  <Link
+                    href={it.href}
+                    aria-current={active ? 'page' : undefined}
+                    style={{
+                      display: 'block', padding: '8px 18px', fontSize: 14, textDecoration: 'none',
+                      color: active ? '#1d4ed8' : '#1f2937', background: active ? '#eef4ff' : 'transparent',
+                      borderLeft: active ? '3px solid #2563eb' : '3px solid transparent',
+                    }}
+                  >
+                    {it.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
     </nav>
   );
 }

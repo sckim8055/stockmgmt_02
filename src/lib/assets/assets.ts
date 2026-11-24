@@ -225,14 +225,14 @@ function validateCustom(input: Record<string, unknown>, defs: CustomDef[], acces
 
 async function assertAssetModel(db: Db, actor: Actor, modelId: string): Promise<void> {
   const { rowCount } = await db.query(
-    "SELECT 1 FROM app.item_model WHERE id = $1 AND company_id = $2 AND kind = 'ASSET' AND is_active",
+    "SELECT 1 FROM app.item_model WHERE id = $1 AND company_id = $2 AND kind = 'ASSET' AND is_active FOR SHARE",
     [modelId, actor.companyId],
   );
   if (!rowCount) throw badRequest('선택할 수 없는 모델입니다. (자산용 모델만 가능합니다)');
 }
 
 async function assertActiveDepartment(db: Db, actor: Actor, departmentId: string): Promise<void> {
-  const { rowCount } = await db.query('SELECT 1 FROM app.department WHERE id = $1 AND company_id = $2 AND is_active', [
+  const { rowCount } = await db.query('SELECT 1 FROM app.department WHERE id = $1 AND company_id = $2 AND is_active FOR SHARE', [
     departmentId,
     actor.companyId,
   ]);
@@ -464,7 +464,9 @@ export async function actOnAsset(db: Db, actor: Actor, access: DataAccess, asset
     throw err;
   }
   if ((action === 'ASSIGN' || action === 'LOAN') && next.holderPersonId) {
-    const person = await db.query('SELECT 1 FROM app.person WHERE id = $1 AND company_id = $2 AND is_active', [next.holderPersonId, actor.companyId]);
+    // FOR SHARE: 퇴사 처리(직원 행을 FOR UPDATE 로 잠근다)와 줄을 세운다. 잠그지 않으면 "보유 자산 없음" 검사와
+    // 이 배정이 서로를 보지 못해, 퇴사한 직원이 자산을 보유하게 된다.
+    const person = await db.query('SELECT 1 FROM app.person WHERE id = $1 AND company_id = $2 AND is_active FOR SHARE', [next.holderPersonId, actor.companyId]);
     if (!person.rowCount) throw badRequest('선택할 수 없는 직원입니다.');
   }
   const location = input.location === undefined ? asset.location : input.location?.trim() || null;

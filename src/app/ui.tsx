@@ -61,7 +61,14 @@ export interface ApiError {
 
 export type ApiResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; error: ApiError; redirected: boolean };
+  | {
+      ok: false;
+      status: number;
+      error: ApiError;
+      redirected: boolean;
+      /** 오류 응답 본문 전체. 오류와 함께 내려오는 추가 정보(예: 직원 퇴사 거부 시 보유 수량)를 읽을 때 쓴다. */
+      raw?: unknown;
+    };
 
 const FALLBACK_ERROR = '요청을 처리하지 못했습니다.';
 
@@ -124,7 +131,7 @@ export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: s
     window.location.href = '/change-password';
     return { ok: false, status: res.status, error, redirected: true };
   }
-  return { ok: false, status: res.status, error, redirected: false };
+  return { ok: false, status: res.status, error, redirected: false, raw };
 }
 
 // ── 버튼 ──

@@ -5,7 +5,10 @@ import type { Actor } from '@/lib/http/route';
 import { IMPORT_COLUMNS, IMPORT_TITLES, runImport, type ImportKind } from './run';
 import { readXlsx, writeXlsx, XLSX_LIMITS, XlsxError } from './xlsx';
 
-/** 요청 본문(엑셀 파일 그대로)을 크기를 확인하며 읽는다. */
+/** 본문을 다 받기까지 기다리는 시간. 일부러 천천히 보내는 요청이 자리를 오래 차지하지 못하게 한다. */
+const UPLOAD_DEADLINE_MS = 30_000;
+
+/** 요청 본문(엑셀 파일 그대로)을 크기와 시간을 확인하며 읽는다. */
 async function readUpload(req: Request): Promise<Uint8Array> {
   const declared = Number(req.headers.get('content-length') ?? '0');
   if (declared > XLSX_LIMITS.fileBytes) throw new HttpError(413, 'TOO_LARGE', '파일이 너무 큽니다. (최대 5MB)');
@@ -13,8 +16,19 @@ async function readUpload(req: Request): Promise<Uint8Array> {
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
+  const deadline = Date.now() + UPLOAD_DEADLINE_MS;
   for (;;) {
-    const { done, value } = await reader.read();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), Math.max(0, deadline - Date.now()));
+    });
+    const next = await Promise.race([reader.read(), timeout]);
+    clearTimeout(timer);
+    if (next === 'timeout') {
+      await reader.cancel().catch(() => undefined);
+      throw new HttpError(408, 'UPLOAD_TIMEOUT', '파일을 받는 데 너무 오래 걸렸습니다. 다시 시도하세요.');
+    }
+    const { done, value } = next;
     if (done) break;
     size += value.length;
     if (size > XLSX_LIMITS.fileBytes) {
@@ -41,10 +55,11 @@ let runningImports = 0;
 export async function handleImport(kind: ImportKind, req: Request, actor: Actor, tenant: <T>(fn: (db: Db) => Promise<T>) => Promise<T>): Promise<Response> {
   const mode = new URL(req.url).searchParams.get('mode') ?? 'preview';
   if (mode !== 'preview' && mode !== 'commit') throw badRequest('mode 는 preview 또는 commit 이어야 합니다.');
+  // 파일은 자리를 잡기 전에 다 받는다. 받는 동안에는 자리를 차지하지 않는다(느린 전송으로 다른 기업의 업로드를 막지 못하게).
+  const bytes = await readUpload(req);
   if (runningImports >= MAX_CONCURRENT_IMPORTS) throw new HttpError(429, 'IMPORT_BUSY', '다른 업로드가 처리 중입니다. 잠시 후 다시 시도하세요.');
   runningImports++;
   try {
-    const bytes = await readUpload(req);
     let sheet;
     try {
       sheet = readXlsx(bytes);

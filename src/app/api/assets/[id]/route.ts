@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isoDate, str } from '@/lib/validation';
+import { isoDate, line, str } from '@/lib/validation';
 import { getAsset, updateAsset } from '@/lib/assets/assets';
 import { loadDataAccess } from '@/lib/authz/scope';
 import { json } from '@/lib/http/errors';
@@ -10,8 +10,8 @@ const date = isoDate();
 // 상태와 보유자는 여기서 바꿀 수 없다(처리 API 전용). 정의하지 않은 키는 거부한다.
 const Body = z.strictObject({
   modelId: z.uuid().optional(),
-  assetTag: str().trim().min(1).max(64).optional(),
-  serialNumber: str().trim().max(100).nullable().optional(),
+  assetTag: line().trim().min(1).max(64).optional(),
+  serialNumber: line().trim().max(100).nullable().optional(),
   departmentId: z.uuid().optional(),
   location: str().trim().max(200).nullable().optional(),
   purchaseDate: date.nullable().optional(),

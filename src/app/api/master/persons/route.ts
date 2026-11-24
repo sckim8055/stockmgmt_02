@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { EMAIL_RE, line, str } from '@/lib/validation';
 import { createPerson, listPersons } from '@/lib/master/persons';
 import { badRequest, json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
@@ -13,11 +13,11 @@ const Query = z.object({
 });
 
 // 빈 문자열은 '없음'으로 저장한다.
-const Email = str().trim().max(200).regex(/^$|^[^@\s]+@[^@\s]+\.[^@\s]+$/, '이메일 형식이 올바르지 않습니다.');
+const Email = str().trim().max(200).refine((v) => v === '' || EMAIL_RE.test(v), '이메일 형식이 올바르지 않습니다.');
 
 const Body = z.strictObject({
-  employeeNo: str().trim().max(40).nullish(),
-  name: str().trim().min(1).max(100),
+  employeeNo: line().trim().max(40).nullish(),
+  name: line().trim().min(1).max(100),
   departmentId: z.uuid().nullish(),
   email: Email.nullish(),
 });

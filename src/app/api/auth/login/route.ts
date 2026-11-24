@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line, str } from '@/lib/validation';
 import { login } from '@/lib/auth/login';
 import { sessionCookie } from '@/lib/http/cookies';
 import { json } from '@/lib/http/errors';
@@ -7,7 +7,7 @@ import { route } from '@/lib/http/route';
 
 const Body = z.object({
   companyCode: str().min(1).max(32),
-  loginId: str().min(1).max(64),
+  loginId: line().min(1).max(64),
   password: str().min(1).max(128),
 });
 

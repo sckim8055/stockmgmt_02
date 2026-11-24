@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line } from '@/lib/validation';
 import { createDepartment, listDepartments } from '@/lib/master/departments';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Body = z.strictObject({
-  name: str().trim().min(1).max(80),
+  name: line().trim().min(1).max(80),
 });
 
 // 응답 형식 { departments: [{ id, name, is_default, is_active }] } 은 사용자 관리 화면도 쓴다. 바꾸지 않는다.

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line, str } from '@/lib/validation';
 import { deleteCustomField, updateCustomField } from '@/lib/master/custom-fields';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
@@ -8,7 +8,7 @@ import { route } from '@/lib/http/route';
 const Body = z.strictObject({
   key: str().max(40).optional(),
   dataType: z.enum(['text', 'number', 'date', 'boolean']).optional(),
-  label: str().trim().min(1).max(80).optional(),
+  label: line().trim().min(1).max(80).optional(),
   isRestricted: z.boolean().optional(),
   sortOrder: z.number().int().min(-100000).max(100000).optional(),
   isActive: z.boolean().optional(),

@@ -43,6 +43,7 @@ export const TARGET_TYPE_LABEL = {
 export type TargetType = keyof typeof TARGET_TYPE_LABEL;
 
 /** 부족 알림 뒤 정상으로 돌아오는 수량. 서버의 판정(Math.ceil(min_qty × warn_ratio))과 같은 식이다. */
-export const recoverAt = (t: { min_qty: number; warn_ratio: number }) => Math.ceil(t.min_qty * t.warn_ratio);
+// 서버와 같은 값이 나오도록 정수로 계산한다(부동소수점 곱셈은 100 × 1.1 을 110 보다 크게 만든다).
+export const recoverAt = (t: { min_qty: number; warn_ratio: number }) => Math.ceil((t.min_qty * Math.round(t.warn_ratio * 100)) / 100);
 
 export const fmtRatio = (r: number) => r.toLocaleString('ko-KR', { maximumFractionDigits: 2 });

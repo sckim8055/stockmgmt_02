@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line } from '@/lib/validation';
 import { createCompany } from '@/lib/company/create';
 import { withSystem } from '@/lib/db/context';
 import { json } from '@/lib/http/errors';
@@ -10,8 +10,8 @@ const SYSTEM_ONLY = { access: 'type', allow: ['SYSTEM_ADMIN'] } as const;
 const TIMEZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')]);
 
 const Body = z.object({
-  code: str().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/, '영문·숫자·-·_ 2~32자'),
-  name: str().trim().min(1).max(100),
+  code: line().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/, '영문·숫자·-·_ 2~32자'),
+  name: line().trim().min(1).max(100),
   timezone: z
     .string()
     .max(64)
@@ -19,8 +19,8 @@ const Body = z.object({
     .optional(),
   locale: z.enum(['ko', 'en', 'zh']).optional(),
   admin: z.object({
-    loginId: str().regex(/^[A-Za-z0-9][A-Za-z0-9._@-]{2,63}$/, '영문·숫자·._@- 3~64자'),
-    displayName: str().trim().min(1).max(100),
+    loginId: line().regex(/^[A-Za-z0-9][A-Za-z0-9._@-]{2,63}$/, '영문·숫자·._@- 3~64자'),
+    displayName: line().trim().min(1).max(100),
     email: z.email().max(200).nullish(),
   }),
 });

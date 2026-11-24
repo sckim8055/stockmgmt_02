@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { EMAIL_RE, line, str } from '@/lib/validation';
 
-const Email = str().trim().max(200).regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/, '이메일 형식이 올바르지 않습니다.');
+const Email = str().trim().max(200).regex(EMAIL_RE, '이메일 형식이 올바르지 않습니다.');
 const Recipients = z.strictObject({ userIds: z.array(z.uuid()).max(50), emails: z.array(Email).max(50) });
 
 const fields = {
-  name: str().trim().min(1).max(100),
+  name: line().trim().min(1).max(100),
   frequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
   days: z.array(z.number().int().min(1).max(31)).max(31).optional(),
   sendTime: str().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'HH:MM 형식'),

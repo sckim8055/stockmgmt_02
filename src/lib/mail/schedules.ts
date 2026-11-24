@@ -104,6 +104,9 @@ async function assertDepartment(db: Db, actor: Actor, access: DataAccess, depart
   if (!rowCount) throw badRequest('선택할 수 없는 부서입니다.');
 }
 
+/** 누구에게 보내도록 바꿨는지 감사 로그에 남긴다(자료가 기업 밖 주소로 나가도록 설정된 것을 추적할 수 있게). */
+const recipientAudit = (r: { userIds: string[]; emails: string[] }) => ({ userIds: r.userIds, emails: r.emails.map((e) => e.toLowerCase()) });
+
 async function replaceRecipients(db: Db, actor: Actor, scheduleId: string, recipients: { userIds: string[]; emails: string[] }): Promise<void> {
   const userIds = [...new Set(recipients.userIds)];
   const emails = [...new Set(recipients.emails.map((e) => e.toLowerCase()))];
@@ -145,7 +148,7 @@ export async function createSchedule(db: Db, actor: Actor, access: DataAccess, i
   await replaceRecipients(db, actor, id, input.recipients);
   await writeAudit(db, {
     companyId: actor.companyId, actorId: actor.userId, action: 'MAIL_SCHEDULE_CREATED', resource: RESOURCE, targetId: id,
-    after: { name: input.name, frequency: input.frequency, days, sendTime: input.sendTime, timezone: input.timezone, contentType: input.contentType, departmentId: input.departmentId ?? null, recipients: input.recipients.userIds.length + input.recipients.emails.length },
+    after: { name: input.name, frequency: input.frequency, days, sendTime: input.sendTime, timezone: input.timezone, contentType: input.contentType, departmentId: input.departmentId ?? null, recipients: recipientAudit(input.recipients) },
     ip: actor.auditIp,
   });
   return id;
@@ -177,7 +180,7 @@ export async function updateSchedule(db: Db, actor: Actor, access: DataAccess, i
   await writeAudit(db, {
     companyId: actor.companyId, actorId: actor.userId, action: 'MAIL_SCHEDULE_UPDATED', resource: RESOURCE, targetId: s.id,
     before: { name: s.name, frequency: s.frequency, days: s.days, sendTime: s.send_time, timezone: s.timezone, contentType: s.content_type },
-    after: { ...changes, recipients: recipients ? recipients.userIds.length + recipients.emails.length : undefined }, ip: actor.auditIp,
+    after: { ...changes, recipients: recipients ? recipientAudit(recipients) : undefined }, ip: actor.auditIp,
   });
 }
 

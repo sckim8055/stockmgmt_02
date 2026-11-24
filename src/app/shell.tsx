@@ -143,7 +143,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const loadUnread = useCallback(async () => {
     // pageSize=1: 건수만 필요하다(알림 내용은 알림함 화면이 불러온다).
-    const r = await api<{ unread: number }>('GET', '/api/alerts?pageSize=1&light=true');
+    const r = await api<{ unread: number }>('GET', '/api/alerts?pageSize=1');
     setUnread(r.ok ? r.data.unread : null);
   }, []);
 

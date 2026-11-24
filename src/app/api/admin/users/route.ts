@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line } from '@/lib/validation';
 import { createUser, listUsers } from '@/lib/admin/users';
 import { generateTempPassword, hashPassword } from '@/lib/auth/password';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Body = z.object({
-  loginId: str().regex(/^[A-Za-z0-9][A-Za-z0-9._@-]{2,63}$/, '영문·숫자·._@- 3~64자'),
-  displayName: str().trim().min(1).max(100),
+  loginId: line().regex(/^[A-Za-z0-9][A-Za-z0-9._@-]{2,63}$/, '영문·숫자·._@- 3~64자'),
+  displayName: line().trim().min(1).max(100),
   email: z.email().max(200).nullish(),
   lang: z.enum(['ko', 'en', 'zh']).optional(),
   userType: z.enum(['COMPANY_ADMIN', 'COMPANY_USER']),

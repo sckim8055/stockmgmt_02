@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line, str } from '@/lib/validation';
 import { deleteRole, updateRole } from '@/lib/admin/roles';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Body = z.object({
-  name: str().trim().min(1).max(80).optional(),
+  name: line().trim().min(1).max(80).optional(),
   description: str().trim().max(300).nullable().optional(),
   isActive: z.boolean().optional(),
   acl: z

@@ -68,8 +68,8 @@ function readDirectory(bytes: Uint8Array): { entries: Map<string, ZipEntry>; dir
     const nameLength = u16(bytes, p + 28);
     const next = p + 46 + nameLength + u16(bytes, p + 30) + u16(bytes, p + 32);
     if (next > eocd) throw new XlsxError(NOT_XLSX);
-    const name = decoder.decode(bytes.subarray(p + 46, p + 46 + nameLength));
-    // 같은 이름이 둘이면 어느 것이 읽힐지 프로그램마다 달라진다. 거부한다.
+    const name = decoder.decode(bytes.subarray(p + 46, p + 46 + nameLength)).toLowerCase();
+    // 같은 이름(대소문자만 다른 것 포함)이 둘이면 어느 것이 읽힐지 프로그램마다 달라진다. 거부한다.
     if (entries.has(name)) throw new XlsxError(NOT_XLSX);
     entries.set(name, { method: (flags & 1) !== 0 ? -1 : u16(bytes, p + 10), compressedSize: u32(bytes, p + 20), localOffset: u32(bytes, p + 42) });
     p = next;
@@ -79,7 +79,8 @@ function readDirectory(bytes: Uint8Array): { entries: Map<string, ZipEntry>; dir
 
 /** 항목 하나를 푼다. 실제로 나온 크기가 limit 를 넘으면 그 자리에서 멈춘다. */
 function extract(bytes: Uint8Array, dir: { entries: Map<string, ZipEntry>; directoryOffset: number }, name: string, limit: number): string | null {
-  const entry = dir.entries.get(name);
+  // 파일 안의 이름은 대소문자를 구분하지 않는다(엑셀도 그렇게 연다). 목록의 열쇠는 소문자로 맞춰 두었다.
+  const entry = dir.entries.get(name.toLowerCase());
   if (!entry) return null;
   const at = entry.localOffset;
   if (at + 30 > dir.directoryOffset || u32(bytes, at) !== 0x04034b50) throw new XlsxError(NOT_XLSX);
@@ -101,8 +102,9 @@ function extract(bytes: Uint8Array, dir: { entries: Map<string, ZipEntry>; direc
     chunks.push(chunk);
   });
   try {
-    // 조금씩 넣어, 한도를 넘는 순간 나머지 입력을 풀지 않고 멈춘다.
-    const STEP = 64 * 1024;
+    // 조금씩 넣어, 한도를 넘는 순간 나머지 입력을 풀지 않고 멈춘다. 압축은 최대 약 1,000배로 불어나므로
+    // 한 번에 넣는 양이 곧 한도를 넘겨 풀리는 양의 상한이다(2KB → 약 2MB).
+    const STEP = 2 * 1024;
     for (let i = 0; i < data.length; i += STEP) inflate.push(data.subarray(i, Math.min(i + STEP, data.length)), i + STEP >= data.length);
     if (data.length === 0) inflate.push(new Uint8Array(0), true);
   } catch (err) {
@@ -214,19 +216,31 @@ function scanXml(xml: string, h: XmlHandler): void {
   }
 }
 
-/** 태그의 속성 하나를 읽는다. 속성 문자열 길이에 비례하는 시간만 쓴다. */
-function attr(attrs: string, name: string): string | undefined {
-  let from = 0;
-  for (;;) {
-    const at = attrs.indexOf(name + '="', from);
-    if (at < 0) return undefined;
-    if (at === 0 || attrs.charCodeAt(at - 1) <= 32) {
-      const start = at + name.length + 2;
-      const end = attrs.indexOf('"', start);
-      return end < 0 ? undefined : attrs.slice(start, end);
-    }
-    from = at + 1;
+/**
+ * 태그의 속성들을 읽는다. 큰따옴표·작은따옴표, `=` 앞뒤의 공백을 모두 받는다. 글자를 한 번씩만 본다.
+ * 속성 이름은 접두사를 포함한 그대로다(r:id 등).
+ */
+function parseAttrs(attrs: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const n = attrs.length;
+  let i = 0;
+  while (i < n) {
+    while (i < n && attrs.charCodeAt(i) <= 32) i++;
+    const nameStart = i;
+    while (i < n && attrs.charCodeAt(i) > 32 && attrs.charCodeAt(i) !== 61) i++;
+    const name = attrs.slice(nameStart, i);
+    while (i < n && attrs.charCodeAt(i) <= 32) i++;
+    if (!name || attrs.charCodeAt(i) !== 61) throw new XlsxError(NOT_XLSX);
+    i++;
+    while (i < n && attrs.charCodeAt(i) <= 32) i++;
+    const quote = attrs.charCodeAt(i);
+    if (quote !== 34 && quote !== 39) throw new XlsxError(NOT_XLSX);
+    const end = attrs.indexOf(quote === 34 ? '"' : "'", i + 1);
+    if (end < 0) throw new XlsxError(NOT_XLSX);
+    if (!out.has(name)) out.set(name, unescapeXml(attrs.slice(i + 1, end)));
+    i = end + 1;
   }
+  return out;
 }
 
 function columnIndex(ref: string): number {
@@ -266,6 +280,7 @@ function readSharedStrings(xml: string): string[] {
       if (inText && phonetic === 0 && current !== null && current.length <= XLSX_LIMITS.cellChars) current += textOf(xml, from, to, escaped);
     },
   });
+  if (current !== null) throw new XlsxError(NOT_XLSX); // 글자 목록이 닫히지 않은 채 끝났다
   return out;
 }
 
@@ -291,7 +306,9 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
     else if (value === null || value === '') out = null;
     else if (type === 's') {
       const index = Number(value);
-      out = Number.isInteger(index) && index >= 0 && index < shared.length ? shared[index]! : '';
+      // 가리키는 글이 없으면 빈 칸으로 넘기지 않고 멈춘다(조용히 값이 사라지면 안 된다).
+      if (!Number.isInteger(index) || index < 0 || index >= shared.length) throw new XlsxError(`${rowIndex + 1}행: 파일의 글자 목록이 맞지 않습니다. 엑셀에서 다시 저장해 주세요.`);
+      out = shared[index]!;
     } else if (type === 'str' || type === 'd') out = value;
     else if (type === 'b') out = value === '1';
     else if (type === 'e') out = null; // 수식 오류(#N/A 등)는 빈 값으로 본다
@@ -308,6 +325,7 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
       if (out !== null) throw new XlsxError(`열이 너무 많습니다. (최대 ${XLSX_LIMITS.columns}열)`);
     } else {
       while (cells.length < col) cells.push(null);
+      if (col < cells.length) throw new XlsxError(`${rowIndex + 1}행: 같은 칸이 두 번 들어 있습니다.`);
       cells[col] = out;
     }
     col = -1;
@@ -318,8 +336,9 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
       if (name === 'row') {
         // 한도는 실제로 읽은 행의 수로 센다(r 속성은 파일이 적은 값이라 믿지 않는다).
         if (++rowCount > XLSX_LIMITS.rows) throw new XlsxError(`행이 너무 많습니다. (한 번에 최대 ${XLSX_LIMITS.rows - 1}행)`);
-        const r = Number(attr(attrs, 'r'));
+        const r = Number(parseAttrs(attrs).get('r'));
         rowIndex = Number.isInteger(r) && r >= 1 ? r - 1 : nextRow;
+        if (rowIndex < nextRow) throw new XlsxError(`${rowIndex + 1}행: 행 번호가 겹치거나 순서가 맞지 않습니다.`);
         if (rowIndex >= XLSX_LIMITS.rows) throw new XlsxError(`행이 너무 많습니다. (한 번에 최대 ${XLSX_LIMITS.rows - 1}행)`);
         nextRow = rowIndex + 1;
         cells = [];
@@ -330,10 +349,13 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
           cells = null;
         }
       } else if (name === 'c' && cells) {
-        const ref = attr(attrs, 'r');
+        if (col >= 0) throw new XlsxError(NOT_XLSX); // 칸 안에 칸
+        const a = parseAttrs(attrs);
+        const ref = a.get('r');
         col = ref ? columnIndex(ref) : nextCol;
+        if (col < 0) throw new XlsxError(NOT_XLSX);
         nextCol = col + 1;
-        type = attr(attrs, 't') ?? 'n';
+        type = a.get('t') ?? 'n';
         value = null;
         inline = null;
         phonetic = 0;
@@ -362,6 +384,8 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
       else if (capture === 't' && inline !== null && inline.length <= XLSX_LIMITS.cellChars) inline += textOf(xml, from, to, escaped);
     },
   });
+  // 행이나 칸이 닫히지 않은 채 끝났으면 파일이 잘린 것이다.
+  if (cells !== null || col >= 0) throw new XlsxError(NOT_XLSX);
   return rows;
 }
 
@@ -371,7 +395,10 @@ function firstSheetPath(workbook: string | null, rels: string | null): string {
   if (workbook) {
     scanXml(workbook, {
       open(name, attrs) {
-        if (name === 'sheet' && rid === undefined) rid = attr(attrs, 'r:id') ?? attr(attrs, 'id') ?? '';
+        if (name === 'sheet' && rid === undefined) {
+          const a = parseAttrs(attrs);
+          rid = a.get('r:id') ?? a.get('id') ?? '';
+        }
       },
       close() {},
       text() {},
@@ -381,8 +408,9 @@ function firstSheetPath(workbook: string | null, rels: string | null): string {
   if (rels && rid) {
     scanXml(rels, {
       open(name, attrs) {
-        if (name === 'Relationship' && path === undefined && attr(attrs, 'Id') === rid) {
-          const target = attr(attrs, 'Target');
+        const a = name === 'Relationship' && path === undefined ? parseAttrs(attrs) : null;
+        if (a && a.get('Id') === rid) {
+          const target = a.get('Target');
           if (target) path = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
         }
       },
@@ -391,7 +419,7 @@ function firstSheetPath(workbook: string | null, rels: string | null): string {
     });
   }
   path ??= 'xl/worksheets/sheet1.xml';
-  if (!/^xl\/worksheets\/[^/]+\.xml$/.test(path)) throw new XlsxError(NOT_XLSX);
+  if (!/^xl\/worksheets\/[^/]+\.xml$/i.test(path)) throw new XlsxError(NOT_XLSX);
   return path;
 }
 

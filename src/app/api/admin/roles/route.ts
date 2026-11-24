@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line, str } from '@/lib/validation';
 import { createRole, listRoles } from '@/lib/admin/roles';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Acl = z.array(z.object({ resource: str().min(1).max(80), operation: str().min(1).max(20) })).max(500);
 const Body = z.object({
-  name: str().trim().min(1).max(80),
+  name: line().trim().min(1).max(80),
   description: str().trim().max(300).nullish(),
   acl: Acl,
 });

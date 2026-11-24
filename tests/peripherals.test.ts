@@ -223,6 +223,13 @@ describe('조정과 폐기', () => {
     expect(audit).toEqual(['PERIPHERAL_ADJUSTED', 'PERIPHERAL_ADJUSTED', 'PERIPHERAL_DISPOSED']);
   });
 
+  it('조정으로도 보유 + 대여 중 합계가 상한을 넘을 수 없다', async () => {
+    const s = await freshStock(5);
+    await post(issueRoute, 'admin', { action: 'LOAN', stockId: s, personId: id.p1, qty: 1 });
+    expect((await post(adjustRoute, 'admin', { action: 'ADJUST', stockId: s, countedQty: 1_000_000, note: 'x' })).status).toBe(400);
+    expect((await post(adjustRoute, 'admin', { action: 'ADJUST', stockId: s, countedQty: 999_999, note: 'x' })).status).toBe(200);
+  });
+
   it('조정은 대여 중 수량을 건드리지 않는다', async () => {
     const s = await freshStock(5);
     await post(issueRoute, 'admin', { action: 'LOAN', stockId: s, personId: id.p1, qty: 2 });

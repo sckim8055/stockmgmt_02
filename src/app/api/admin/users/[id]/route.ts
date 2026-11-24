@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line } from '@/lib/validation';
 import { updateUser } from '@/lib/admin/users';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Body = z.object({
-  displayName: str().trim().min(1).max(100).optional(),
+  displayName: line().trim().min(1).max(100).optional(),
   email: z.email().max(200).nullable().optional(),
   lang: z.enum(['ko', 'en', 'zh']).optional(),
   userType: z.enum(['COMPANY_ADMIN', 'COMPANY_USER']).optional(),

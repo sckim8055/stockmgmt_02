@@ -9,6 +9,8 @@ import { POST as issueRoute } from '@/app/api/peripherals/issue/route';
 import { POST as receiveRoute } from '@/app/api/peripherals/receive/route';
 import { DELETE as thresholdDelete, PATCH as thresholdPatch } from '@/app/api/thresholds/[id]/route';
 import { GET as thresholdsList, POST as thresholdCreate } from '@/app/api/thresholds/route';
+import { runDailyAlerts } from '@/lib/alerts/daily';
+import { withTenant } from '@/lib/db/context';
 import { closePool } from '@/lib/db/pool';
 import { call, closeOwner, makeCompany, makeUser, owner, sessionFor, uniq, type TestCompany } from './helpers';
 
@@ -233,7 +235,7 @@ describe('한계 수량 관리', () => {
 });
 
 describe('날짜 기준 알림', () => {
-  it('보증 만료 임박·대여 연체를 알림함을 열 때 만들고, 몇 번을 열어도 같은 건은 한 번만 만든다', async () => {
+  it('보증 만료 임박·대여 연체를 알리고, 몇 번을 계산해도 같은 건은 한 번만 만든다', async () => {
     const o = await owner();
     const model = await newModel('ASSET');
     const pmodel = await newModel('PERIPHERAL');
@@ -251,7 +253,8 @@ describe('날짜 기준 알림', () => {
     await o.query('UPDATE app.peripheral_loan SET due_date = current_date - 1 WHERE id = $1', [loan]);
 
     const keysOf = async (who: string) => (await inbox(who)).map((n) => n.payload.key).filter(Boolean) as string[];
-    await call(alertsList, { cookie: cookie.admin });
+    const daily = (company: TestCompany) => withTenant(company.id, (db) => runDailyAlerts(db, company.id));
+    expect(await daily(A)).toBeGreaterThan(0);
     const first = await keysOf('admin');
     expect(first.some((k) => k.startsWith(`warranty:${soon}:`))).toBe(true);
     expect(first.some((k) => k.startsWith(`warranty:${hrSoon}:`))).toBe(true);
@@ -261,9 +264,8 @@ describe('날짜 기준 알림', () => {
     const overdue = (await inbox('admin')).find((n) => n.payload.loanId === loan)!;
     expect(overdue).toMatchObject({ type: 'LOAN_OVERDUE', payload: { holder: 'Kim', qty: 2 } });
 
-    // 다시 열어도, 다른 사람이 열어도 늘지 않는다.
-    await call(alertsList, { cookie: cookie.admin });
-    await call(alertsList, { cookie: cookie.manager });
+    // 다시 계산해도 늘지 않는다.
+    expect(await daily(A)).toBe(0);
     expect(await keysOf('admin')).toEqual(first);
     // 범위가 제한된 사용자는 자기 부서 것만 받는다.
     const hrKeys = await keysOf('hrmanager');
@@ -271,12 +273,28 @@ describe('날짜 기준 알림', () => {
     expect(hrKeys.some((k) => k.startsWith(`loan-overdue:${loan}:`))).toBe(true);
     expect(hrKeys.some((k) => k.includes(soon) || k.includes(late))).toBe(false);
     // 다른 기업에는 아무것도 생기지 않는다.
-    await call(alertsList, { cookie: cookie.badmin });
+    expect(await daily(B)).toBe(0);
     expect(await keysOf('badmin')).toEqual([]);
     // 기한이 바뀌면 새 건으로 다시 알린다.
     await o.query('UPDATE app.asset SET due_date = current_date - 1 WHERE id = $1', [late]);
-    await call(alertsList, { cookie: cookie.admin });
+    await daily(A);
     expect((await keysOf('admin')).filter((k) => k.startsWith(`asset-overdue:${late}:`)).length).toBe(2);
+  });
+
+  it('알림함을 여는 요청은 기업마다 하루에 한 번만 날짜 기준 알림을 계산한다', async () => {
+    const C = await makeCompany('ALRC');
+    const c = await sessionFor(C.code, 'admin');
+    const runs = async () => (await one("SELECT count(*)::int AS n FROM app.audit_log WHERE company_id = $1 AND action = 'DAILY_ALERTS_RUN'", [C.id])).n;
+    expect(await runs()).toBe(0);
+    await Promise.all(Array.from({ length: 6 }, () => call(alertsList, { cookie: c })));
+    expect(await runs()).toBe(1);
+    await call(alertsList, { cookie: c, path: '/api/alerts?page=2' });
+    await call(alertsList, { cookie: c });
+    expect(await runs()).toBe(1);
+    // 어제 한 기록만 있으면 오늘 다시 계산한다.
+    await (await owner()).query("UPDATE app.audit_log SET created_at = created_at - interval '1 day' WHERE company_id = $1 AND action = 'DAILY_ALERTS_RUN'", [C.id]);
+    await call(alertsList, { cookie: c });
+    expect(await runs()).toBe(2);
   });
 
   it('자산 목록에서 연체만 골라 보고 반납 기한으로 정렬할 수 있다', async () => {
@@ -286,5 +304,83 @@ describe('날짜 기준 알림', () => {
     const today = new Date().toISOString().slice(0, 10);
     expect(list.data.items.every((a: { state: string; due_date: string }) => a.state === 'IN_USE' && a.due_date < today)).toBe(true);
     expect((await call(assetsList, { cookie: cookie.hrmanager, path: '/api/assets?overdue=true' })).data.total).toBe(0); // 연체 자산은 IT 소속
+  });
+});
+
+describe('검토에서 드러난, 테스트가 없던 보장', () => {
+  it('카테고리에 건 한계 수량은 그 카테고리의 어느 모델이 바뀌어도 판정된다', async () => {
+    const o = await owner();
+    const cat = (await o.query("INSERT INTO app.category (company_id, kind, name) VALUES ($1, 'PERIPHERAL', $2) RETURNING id", [A.id, uniq('Cat')])).rows[0].id as string;
+    const mk = async () => (await o.query("INSERT INTO app.item_model (company_id, category_id, kind, manufacturer, name) VALUES ($1, $2, 'PERIPHERAL', 'T', $3) RETURNING id", [A.id, cat, uniq('M')])).rows[0].id as string;
+    const [m1, m2] = [await mk(), await mk()];
+    const s1 = (await post(receiveRoute, 'admin', { modelId: m1, qty: 3 })).data.stockId as string;
+    await post(receiveRoute, 'admin', { modelId: m2, qty: 3 });
+    const t = (await post(thresholdCreate, 'admin', { categoryId: cat, minQty: 5 })).data.thresholdId as string;
+    expect(await typesFor('admin', t)).toEqual([]); // 3 + 3 = 6
+    await post(issueRoute, 'admin', { action: 'ISSUE', stockId: s1, personId: id.p1, qty: 2 }); // 4
+    expect(await typesFor('admin', t)).toEqual(['LOW_STOCK']);
+    await post(receiveRoute, 'admin', { modelId: m2, qty: 1 }); // 5 → 다른 모델의 입고로 회복
+    expect(await typesFor('admin', t)).toEqual(['LOW_STOCK', 'STOCK_RECOVERED']);
+    // 모델을 다른 카테고리로 옮기면 양쪽 카테고리가 다시 판정된다.
+    const { PATCH: modelPatch } = await import('@/app/api/master/models/[id]/route');
+    expect((await call(withId(modelPatch as Handler, m2), { method: 'PATCH', cookie: cookie.admin, body: { categoryId: id.pcat } })).status).toBe(200);
+    expect(await typesFor('admin', t)).toEqual(['LOW_STOCK', 'STOCK_RECOVERED', 'LOW_STOCK']); // m1 의 1개만 남음
+  });
+
+  it('자산의 배정·반납, 관리 부서 변경도 판정을 일으킨다', async () => {
+    const model = await newModel('ASSET');
+    const a = (await post(assetsCreate, 'admin', { modelId: model, assetTag: uniq('GA-') })).data.assetId as string;
+    const t = (await post(thresholdCreate, 'admin', { modelId: model, departmentId: id.it, minQty: 1 })).data.thresholdId as string;
+    expect(await typesFor('admin', t)).toEqual([]);
+    await call(withId(assignRoute, a), { method: 'POST', cookie: cookie.admin, body: { action: 'ASSIGN', holderPersonId: id.p1 } });
+    expect(await typesFor('admin', t)).toEqual(['LOW_STOCK']);
+    await call(withId(assignRoute, a), { method: 'POST', cookie: cookie.admin, body: { action: 'RETURN' } });
+    expect(await typesFor('admin', t)).toEqual(['LOW_STOCK', 'STOCK_RECOVERED']);
+    const { PATCH: assetPatch } = await import('@/app/api/assets/[id]/route');
+    expect((await call(withId(assetPatch as Handler, a), { method: 'PATCH', cookie: cookie.admin, body: { departmentId: id.hr } })).status).toBe(200);
+    expect(await typesFor('admin', t)).toEqual(['LOW_STOCK', 'STOCK_RECOVERED', 'LOW_STOCK']); // IT 에는 이제 0대
+  });
+
+  it('주변기기 대여 반납도 판정을 일으키고, 부서 한계 수량은 그 부서의 재고만 센다', async () => {
+    const model = await newModel('PERIPHERAL');
+    const stock = (await post(receiveRoute, 'admin', { modelId: model, qty: 2 })).data.stockId as string; // IT
+    const hr = (await post(thresholdCreate, 'admin', { modelId: model, departmentId: id.hr, minQty: 1 })).data.thresholdId as string;
+    expect(await typesFor('admin', hr)).toEqual(['LOW_STOCK']); // IT 에 2개 있어도 HR 은 0개
+    const it = (await post(thresholdCreate, 'admin', { modelId: model, departmentId: id.it, minQty: 2 })).data.thresholdId as string;
+    const loan = (await post(issueRoute, 'admin', { action: 'LOAN', stockId: stock, personId: id.p1, qty: 1 })).data.loanId as string;
+    expect(await typesFor('admin', it)).toEqual(['LOW_STOCK']);
+    await post(issueRoute, 'admin', { action: 'RETURN', loanId: loan, qty: 1 });
+    expect(await typesFor('admin', it)).toEqual(['LOW_STOCK', 'STOCK_RECOVERED']);
+  });
+
+  it('꺼진 역할로는 알림을 받지 않는다', async () => {
+    const o = await owner();
+    await userWith('offrole', [['alert.inbox', 'read']]);
+    await o.query('UPDATE app.role SET is_active = false WHERE id IN (SELECT role_id FROM app.user_role WHERE user_id = $1)', [userId.offrole]);
+    const model = await newModel('PERIPHERAL');
+    const t = (await post(thresholdCreate, 'admin', { modelId: model, minQty: 1 })).data.thresholdId as string;
+    expect(await typesFor('admin', t)).toEqual(['LOW_STOCK']);
+    expect(await typesFor('offrole', t)).toEqual([]);
+  });
+
+  it('퇴역한 자산의 보증, 반납된 자산·종료된 대여의 기한은 알리지 않는다', async () => {
+    const o = await owner();
+    const { POST: retireRoute } = await import('@/app/api/assets/[id]/retire/route');
+    const model = await newModel('ASSET');
+    const pmodel = await newModel('PERIPHERAL');
+    const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+    const retired = (await post(assetsCreate, 'admin', { modelId: model, assetTag: uniq('GR-'), warrantyEnd: day(5) })).data.assetId as string;
+    await call(withId(retireRoute as Handler, retired), { method: 'POST', cookie: cookie.admin, body: { action: 'RETIRE' } });
+    const returned = (await post(assetsCreate, 'admin', { modelId: model, assetTag: uniq('GR-') })).data.assetId as string;
+    await call(withId(assignRoute, returned), { method: 'POST', cookie: cookie.admin, body: { action: 'LOAN', holderPersonId: id.p1, dueDate: day(5) } });
+    await call(withId(assignRoute, returned), { method: 'POST', cookie: cookie.admin, body: { action: 'RETURN' } });
+    await o.query('UPDATE app.asset SET due_date = current_date - 3 WHERE id = $1', [returned]); // 재고 상태인데 기한 값만 남은 경우
+    const stock = (await post(receiveRoute, 'admin', { modelId: pmodel, qty: 2 })).data.stockId as string;
+    const loan = (await post(issueRoute, 'admin', { action: 'LOAN', stockId: stock, personId: id.p1, qty: 1, dueDate: day(5) })).data.loanId as string;
+    await post(issueRoute, 'admin', { action: 'RETURN', loanId: loan, qty: 1 });
+    await o.query('UPDATE app.peripheral_loan SET due_date = current_date - 3 WHERE id = $1', [loan]);
+    await withTenant(A.id, (db) => runDailyAlerts(db, A.id));
+    const keys = (await inbox('admin')).map((n) => String(n.payload.key ?? ''));
+    expect(keys.filter((k) => k.includes(retired) || k.includes(returned) || k.includes(loan))).toEqual([]);
   });
 });

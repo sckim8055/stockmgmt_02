@@ -9,6 +9,7 @@
 //  - 이미 있는 자산 태그·사번은 오류로 처리한다(기존 자료를 덮어쓰지 않는다).
 import type { Db } from '@/lib/db/context';
 import { actOnAsset, createAsset } from '@/lib/assets/assets';
+import { deferEvaluation, flushEvaluation } from '@/lib/alerts/thresholds';
 import { writeAudit } from '@/lib/auth/audit';
 import { actorPermissions, lockCompanyAdministration, permKey } from '@/lib/authz/grants';
 import { loadDataAccess, type DataAccess } from '@/lib/authz/scope';
@@ -20,7 +21,7 @@ import { createDepartment } from '@/lib/master/departments';
 import { createModel } from '@/lib/master/models';
 import { createPerson } from '@/lib/master/persons';
 import { MAX_QTY, receiveStock } from '@/lib/peripherals/peripherals';
-import { hasNul, isIsoDate } from '@/lib/validation';
+import { EMAIL_RE, hasControl, isIsoDate } from '@/lib/validation';
 import { serialToIsoDate, type Cell } from './xlsx';
 
 export type ImportKind = 'persons' | 'assets' | 'peripherals';
@@ -41,7 +42,7 @@ export const IMPORT_COLUMNS: Record<ImportKind, Column[]> = {
     { key: 'employeeNo', header: '사번', type: 'text', max: 40, hint: '있으면 기업 안에서 고유해야 합니다. 0으로 시작하는 사번은 셀 서식을 "텍스트"로 바꾼 뒤 입력하세요.' },
     { key: 'name', header: '이름', required: true, type: 'text', max: 100, hint: '필수' },
     { key: 'department', header: '부서', type: 'text', max: 80, hint: '없는 부서는 자동으로 만듭니다(부서 등록 권한 필요).' },
-    { key: 'email', header: '이메일', type: 'text', max: 200, pattern: { re: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, message: '이메일 형식이 올바르지 않습니다.' }, hint: '선택' },
+    { key: 'email', header: '이메일', type: 'text', max: 200, pattern: { re: EMAIL_RE, message: '이메일 형식이 올바르지 않습니다.' }, hint: '선택' },
   ],
   assets: [
     { key: 'assetTag', header: '자산태그', required: true, type: 'text', max: 64, hint: '필수. 기업 안에서 고유합니다.' },
@@ -132,7 +133,7 @@ function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[]): { row
         const text = (typeof raw === 'number' ? String(raw) : typeof raw === 'boolean' ? (raw ? 'TRUE' : 'FALSE') : raw).trim();
         // 15자리를 넘는 숫자는 엑셀이 저장할 때 이미 값이 바뀌어 있다. 엉뚱한 사번·태그로 들어가지 않게 거부한다.
         if (typeof raw === 'number' && (text.includes('e') || !Number.isSafeInteger(Math.trunc(raw)))) fail(`${col.header}: 숫자가 너무 큽니다. 셀 서식을 "텍스트"로 바꾼 뒤 다시 입력하세요.`);
-        else if (hasNul(text)) fail(`${col.header}: 사용할 수 없는 문자가 들어 있습니다.`);
+        else if (hasControl(text)) fail(`${col.header}: 줄바꿈이나 제어 문자는 쓸 수 없습니다.`);
         else if (col.max && text.length > col.max) fail(`${col.header}: 너무 깁니다. (최대 ${col.max}자)`);
         else if (col.pattern && !col.pattern.re.test(text)) fail(`${col.header}: ${col.pattern.message}`);
         values[col.key] = text;
@@ -322,6 +323,8 @@ export async function runImport(
         throw new RollbackImport();
       }
       const master = new MasterData(db, actor, perms);
+      // 한계 수량 판정은 행마다 하지 않고 끝에 한 번만 한다(행마다 하면 한계 수량 잠금을 업로드 내내 잡게 된다).
+      deferEvaluation(db);
       for (const { row, values } of rows) {
         try {
           await importRow(db, actor, access, master, kind, values);
@@ -334,6 +337,7 @@ export async function runImport(
       }
       result.created = master.created;
       if (errors.length > 0 || !options.commit) throw new RollbackImport();
+      await flushEvaluation(db, actor.companyId);
       await writeAudit(db, {
         companyId: actor.companyId, actorId: actor.userId, action: 'IMPORT_COMMITTED', resource: IMPORT_RESOURCE[kind],
         after: { rows: rows.length, created: master.created }, ip: actor.auditIp,

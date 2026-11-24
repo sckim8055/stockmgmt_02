@@ -4,7 +4,8 @@
 //   1) 부서 범위: access.scope 를 SQL 조건에 넣는다. 범위 밖 자산은 "없는 것"으로 응답한다(404).
 //   2) 제한 필드: 읽기 권한이 없는 필드는 응답에서 빼고(present), 정렬·검색에도 쓸 수 없게 한다.
 import type { Db } from '@/lib/db/context';
-import { evaluateForModel } from '@/lib/alerts/thresholds';
+import { evaluateForModel, evaluateForTargets } from '@/lib/alerts/thresholds';
+import { companyToday } from '@/lib/alerts/today';
 import { writeAudit } from '@/lib/auth/audit';
 import type { DataAccess } from '@/lib/authz/scope';
 import { HttpError, badRequest, forbidden, notFound } from '@/lib/http/errors';
@@ -44,8 +45,8 @@ const SQL_ASSET_FILTERS =
   '      OR m.name ILIKE $9 OR m.manufacturer ILIKE $9 OR p.name ILIKE $9)' +
   // $10 = 목록에서 뺄 상태들. 등록 취소(VOID)된 자산은 따로 요청할 때만 보인다.
   ' AND a.state <> ALL($10::text[])' +
-  // $11 = 반납 기한이 지난 대여만
-  " AND (NOT $11::boolean OR (a.state = 'IN_USE' AND a.due_date < current_date)) ";
+  // $11 = 오늘(기업 시간대). 값이 있으면 반납 기한이 지난 대여만.
+  " AND ($11::date IS NULL OR (a.state = 'IN_USE' AND a.due_date < $11::date)) ";
 
 const SQL_ASSET_LIST_BASE = 'SELECT' + SQL_ASSET_COLUMNS + SQL_ASSET_FROM + 'WHERE' + SQL_ASSET_VISIBLE + SQL_ASSET_FILTERS;
 const SQL_ASSET_PAGE = ', a.id LIMIT $12 OFFSET $13';
@@ -157,7 +158,7 @@ export async function listAssets(db: Db, actor: Actor, access: DataAccess, query
     query.holderPersonId ?? null,
     q ? likePattern(q) : null,
     query.includeVoid ? [] : ['VOID'],
-    query.overdue ?? false,
+    query.overdue ? await companyToday(db, actor.companyId) : null,
   ];
   const sortKey = `${sort}:${query.order ?? 'asc'}`;
   if (!Object.hasOwn(SQL_ASSET_LIST_BY, sortKey)) throw badRequest('정렬 기준이 올바르지 않습니다.');
@@ -436,8 +437,8 @@ export async function updateAsset(db: Db, actor: Actor, access: DataAccess, asse
 
   // 모델이나 관리 부서가 바뀌면 양쪽의 사용 가능 수량이 달라진다.
   if (departmentChanged || (input.modelId !== undefined && input.modelId !== before.model_id)) {
-    await evaluateForModel(db, actor.companyId, before.model_id);
-    if (input.modelId !== undefined && input.modelId !== before.model_id) await evaluateForModel(db, actor.companyId, input.modelId);
+    // 두 모델의 한계 수량을 한 번에(ID 순으로) 잠근다. 따로 잠그면 서로 반대 방향으로 바꾸는 두 요청이 교착에 빠진다.
+    await evaluateForTargets(db, actor.companyId, { modelIds: [...new Set([before.model_id, input.modelId ?? before.model_id])] });
   }
 
   // 이력에는 "무엇이 바뀌었는지"만 남긴다. 제한 필드의 값은 남기지 않는다.

@@ -7,6 +7,7 @@
 //  - 카테고리는 같은 종류의 활성 카테고리로만 바꿀 수 있다.
 //  - 자산·주변기기 재고·한계수량이 참조하는 모델은 삭제할 수 없다. 비활성화한다.
 import type { Db } from '@/lib/db/context';
+import { evaluateForTargets } from '@/lib/alerts/thresholds';
 import { writeAudit } from '@/lib/auth/audit';
 import { badRequest, notFound } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
@@ -132,6 +133,8 @@ export async function updateModel(db: Db, actor: Actor, modelId: string, input: 
     'UPDATE app.item_model SET category_id = $2, manufacturer = $3, name = $4 WHERE id = $1 AND company_id = $5',
     [model.id, categoryChanged ? input.categoryId : model.category_id, manufacturer, name, actor.companyId],
   );
+  // 모델이 다른 카테고리로 가면 두 카테고리의 사용 가능 수량이 달라진다.
+  if (categoryChanged) await evaluateForTargets(db, actor.companyId, { categoryIds: [model.category_id, input.categoryId as string] });
   await writeAudit(db, {
     companyId: actor.companyId, actorId: actor.userId, action: 'MODEL_UPDATED', resource: RESOURCE, targetId: model.id,
     before: { categoryId: model.category_id, manufacturer: model.manufacturer, name: model.name },

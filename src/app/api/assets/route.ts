@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isoDate, str } from '@/lib/validation';
+import { isoDate, line, str } from '@/lib/validation';
 import { ASSET_SORT_KEYS, createAsset, listAssets } from '@/lib/assets/assets';
 import { loadDataAccess } from '@/lib/authz/scope';
 import { badRequest, json } from '@/lib/http/errors';
@@ -25,8 +25,8 @@ const Query = z.object({
 
 const Body = z.object({
   modelId: z.uuid(),
-  assetTag: str().trim().min(1).max(64),
-  serialNumber: str().trim().max(100).nullish(),
+  assetTag: line().trim().min(1).max(64),
+  serialNumber: line().trim().max(100).nullish(),
   initialState: z.enum(['IN_STOCK', 'ON_ORDER']).optional(),
   departmentId: z.uuid().nullish(),
   location: str().trim().max(200).nullish(),

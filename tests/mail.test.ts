@@ -246,3 +246,33 @@ describe('범위·격리·권한', () => {
     expect((await call(schedulesList)).status).toBe(401);
   });
 });
+
+describe('검토에서 드러난, 테스트가 없던 보장', () => {
+  it('받는 사람: 비활성 계정은 고를 수 없고, 계정과 주소를 합쳐 50명까지다', async () => {
+    const o = await owner();
+    await userWith('gone', [['asset.item', 'read']]);
+    await o.query('UPDATE app.app_user SET is_active = false WHERE id = $1', [userId.gone]);
+    expect((await post(scheduleCreate, 'admin', body({ recipients: { userIds: [userId.gone], emails: [] } }))).status).toBe(400);
+    const fifty = Array.from({ length: 50 }, (_, i) => `r${i}@x.test`);
+    expect((await post(scheduleCreate, 'admin', body({ recipients: { userIds: [userId.mailer], emails: fifty } }))).status).toBe(400);
+    expect((await post(scheduleCreate, 'admin', body({ recipients: { userIds: [userId.mailer], emails: fifty.slice(1) } }))).status).toBe(201);
+  });
+
+  it('미반납 대여: 부서 일정에는 다른 부서의 주변기기 대여가 들어가지 않는다', async () => {
+    const o = await owner();
+    const person = (await o.query("INSERT INTO app.person (company_id, name) VALUES ($1, 'OtherDeptHolder') RETURNING id", [A.id])).rows[0].id;
+    const stock = (await post(receiveRoute, 'admin', { modelId: id.mouse, departmentId: id.it, qty: 3 })).data.stockId;
+    await post(issueRoute, 'admin', { action: 'LOAN', stockId: stock, personId: person, qty: 1 });
+    const s = (await post(scheduleCreate, 'admin', body({ contentType: 'OPEN_LOANS', departmentId: id.hr }))).data.scheduleId as string;
+    const hr = await call(withId(previewRoute, s), { cookie: cookie.admin });
+    expect(hr.data.text).not.toContain('OtherDeptHolder');
+    const all = (await post(scheduleCreate, 'admin', body({ contentType: 'OPEN_LOANS' }))).data.scheduleId as string;
+    expect((await call(withId(previewRoute, all), { cookie: cookie.admin })).data.text).toContain('OtherDeptHolder');
+  });
+
+  it('받는 사람 주소는 감사 로그에 남는다', async () => {
+    const s = (await post(scheduleCreate, 'admin', body({ recipients: { userIds: [userId.mailer], emails: ['Out@External.example'] } }))).data.scheduleId as string;
+    const audit = await one("SELECT after FROM app.audit_log WHERE target_id = $1 AND action = 'MAIL_SCHEDULE_CREATED'", [s]);
+    expect(audit.after.recipients).toEqual({ userIds: [userId.mailer], emails: ['out@external.example'] });
+  });
+});

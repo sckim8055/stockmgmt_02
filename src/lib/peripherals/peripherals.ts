@@ -8,6 +8,7 @@
 //  - 이력의 qty 부호: 보유 수량이 늘면 +, 줄면 -. 대여 분실(LOAN_LOSS)은 대여 중 수량이 줄어든 것이라 -.
 import type { Db } from '@/lib/db/context';
 import { evaluateForModel } from '@/lib/alerts/thresholds';
+import { companyToday } from '@/lib/alerts/today';
 import { writeAudit } from '@/lib/auth/audit';
 import type { DataAccess } from '@/lib/authz/scope';
 import { badRequest, forbidden, HttpError, notFound } from '@/lib/http/errors';
@@ -311,16 +312,17 @@ const SQL_LOAN_FROM =
   ' AND ($3::text IS NULL OR l.status = $3)' +
   ' AND ($4::uuid IS NULL OR l.person_id = $4)' +
   ' AND ($5::uuid IS NULL OR s.department_id = $5)' +
-  " AND (NOT $6::boolean OR (l.status = 'OPEN' AND l.due_date < current_date))" +
+  " AND (NOT $6::boolean OR (l.status = 'OPEN' AND l.due_date < $8::date))" +
   ' AND ($7::text IS NULL OR p.name ILIKE $7 OR m.name ILIKE $7 OR m.manufacturer ILIKE $7)';
+// $8 = 오늘(기업 시간대)
 const SQL_LOAN_COUNT = 'SELECT count(*)::int AS n' + SQL_LOAN_FROM;
 const SQL_LOAN_PAGE =
   'SELECT l.id, l.stock_id, s.model_id, m.manufacturer, m.name AS model_name, s.department_id, d.name AS department_name,' +
   ' l.person_id, p.name AS person_name, p.is_active AS person_active, l.qty, l.returned_qty, l.lost_qty,' +
   ' (l.qty - l.returned_qty - l.lost_qty) AS outstanding_qty, l.due_date::text AS due_date, l.status, l.loaned_at, l.closed_at,' +
-  " (l.status = 'OPEN' AND l.due_date < current_date) AS overdue" +
+  " (l.status = 'OPEN' AND l.due_date < $8::date) AS overdue" +
   SQL_LOAN_FROM +
-  ' ORDER BY (l.status = \'OPEN\') DESC, l.due_date ASC NULLS LAST, l.loaned_at DESC, l.id LIMIT $8 OFFSET $9';
+  ' ORDER BY (l.status = \'OPEN\') DESC, l.due_date ASC NULLS LAST, l.loaned_at DESC, l.id LIMIT $9 OFFSET $10';
 
 export interface LoanListQuery {
   status?: 'OPEN' | 'CLOSED';
@@ -336,7 +338,7 @@ export interface LoanListQuery {
 export async function listLoans(db: Db, actor: Actor, access: DataAccess, query: LoanListQuery) {
   const { page, pageSize, offset } = paging(query);
   const q = query.q?.trim();
-  const filters = [actor.companyId, access.scope, query.status ?? null, query.personId ?? null, query.departmentId ?? null, query.overdue ?? false, q ? likePattern(q) : null];
+  const filters = [actor.companyId, access.scope, query.status ?? null, query.personId ?? null, query.departmentId ?? null, query.overdue ?? false, q ? likePattern(q) : null, await companyToday(db, actor.companyId)];
   const count = await db.query<{ n: number }>(SQL_LOAN_COUNT, filters);
   const rows = await db.query(SQL_LOAN_PAGE, [...filters, pageSize, offset]);
   return { total: count.rows[0]?.n ?? 0, page, pageSize, items: rows.rows };

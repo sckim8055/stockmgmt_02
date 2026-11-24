@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line, str } from '@/lib/validation';
 import { createModel, listModels } from '@/lib/master/models';
 import { badRequest, json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
@@ -14,8 +14,8 @@ const Query = z.object({
 // 종류(kind)는 받지 않는다. 항상 카테고리에서 복사한다.
 const Body = z.strictObject({
   categoryId: z.uuid(),
-  manufacturer: str().trim().min(1).max(100),
-  name: str().trim().min(1).max(100),
+  manufacturer: line().trim().min(1).max(100),
+  name: line().trim().min(1).max(100),
 });
 
 export const GET = route(

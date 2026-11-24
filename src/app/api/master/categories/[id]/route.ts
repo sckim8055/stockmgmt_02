@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { str } from '@/lib/validation';
+import { line, str } from '@/lib/validation';
 import { deleteCategory, updateCategory } from '@/lib/master/categories';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
@@ -7,7 +7,7 @@ import { route } from '@/lib/http/route';
 // 활성 여부는 activate/deactivate 로만 바꾼다.
 const Body = z.strictObject({
   kind: z.enum(['ASSET', 'PERIPHERAL']).optional(),
-  name: str().trim().min(1).max(80).optional(),
+  name: line().trim().min(1).max(80).optional(),
   nameKo: str().trim().max(80).nullable().optional(),
   nameZh: str().trim().max(80).nullable().optional(),
   sortOrder: z.number().int().min(-100000).max(100000).optional(),

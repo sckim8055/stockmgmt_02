@@ -445,7 +445,7 @@ describe('[R3-gap] 2단계 수정의 살아남은 변이(현재 동작은 맞다
       '<row r="2"><c r="B2" t="inlineStr"><is><t>a\u0000b</t></is></c></row></sheetData></worksheet>';
     const r = await upload(importPersons as Handler, 'admin', rawSheet(sheet), 'preview');
     expect(r.status).toBe(200);
-    expect(r.data.errors[0].message).toContain('사용할 수 없는 문자');
+    expect(r.data.errors[0].message).toContain('제어 문자');
   });
 
   it('업로드: 5MB 를 넘는 본문은 413 (content-length 가 없거나 작게 속여도)', async () => {

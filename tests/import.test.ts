@@ -142,6 +142,57 @@ describe('엑셀 읽기', () => {
     expect(bad(bomb)).toBe(true);
   });
 
+  it('zip 목록의 이상(같은 이름 두 번, 지나치게 많은 항목, 암호화 표시)과 글자 목록 한도 초과를 거부한다', () => {
+    const rejects = (bytes: Uint8Array) => {
+      try {
+        readXlsx(bytes);
+        return false;
+      } catch (err) {
+        return err instanceof XlsxError;
+      }
+    };
+    const sheet = '<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>';
+    const ok = zipSync({ 'xl/worksheets/sheet1.xml': strToU8(sheet) });
+    expect(rejects(ok)).toBe(false);
+    // 대소문자만 다른 같은 이름
+    expect(rejects(zipSync({ 'xl/worksheets/sheet1.xml': strToU8(sheet), 'xl/worksheets/SHEET1.xml': strToU8(sheet) }))).toBe(true);
+    // 항목 수 한도
+    const many: Record<string, Uint8Array> = { 'xl/worksheets/sheet1.xml': strToU8(sheet) };
+    for (let i = 0; i < XLSX_LIMITS.zipEntries; i++) many[`junk/${i}.txt`] = new Uint8Array(0);
+    expect(rejects(zipSync(many, { level: 0 }))).toBe(true);
+    // 암호화 표시(목록의 플래그 비트 0)
+    const encrypted = ok.slice();
+    for (let i = encrypted.length - 22; i >= 0; i--) {
+      if (encrypted[i] === 0x50 && encrypted[i + 1] === 0x4b && encrypted[i + 2] === 1 && encrypted[i + 3] === 2) {
+        encrypted[i + 8] = encrypted[i + 8]! | 1;
+        break;
+      }
+    }
+    expect(rejects(encrypted)).toBe(true);
+    // 글자 목록 개수 한도
+    const shared = '<sst>' + '<si/>'.repeat(XLSX_LIMITS.sharedStrings + 1) + '</sst>';
+    expect(rejects(zipSync({ 'xl/worksheets/sheet1.xml': strToU8(sheet), 'xl/sharedStrings.xml': strToU8(shared) }))).toBe(true);
+  });
+
+  it('속성은 작은따옴표·공백이 있어도 읽고, 맞지 않는 파일은 값을 조용히 버리지 않고 거부한다', () => {
+    const wrap = (sheet: string, shared = '<sst><si><t>alpha</t></si><si><t>gamma</t></si></sst>') =>
+      zipSync({ 'xl/worksheets/sheet1.xml': strToU8(`<worksheet><sheetData>${sheet}</sheetData></worksheet>`), 'xl/SharedStrings.xml': strToU8(shared) });
+    // 작은따옴표, = 주변 공백, 대소문자가 다른 글자 목록 파일 이름
+    expect(readXlsx(wrap(`<row r = '1'><c r='A1' t = "s"><v>0</v></c><c t='s' r="C1"><v>1</v></c></row>`))).toEqual([['alpha', null, 'gamma']]);
+    const rejects = (sheet: string) => {
+      try {
+        readXlsx(wrap(sheet));
+        return false;
+      } catch (err) {
+        return err instanceof XlsxError;
+      }
+    };
+    expect(rejects('<row r="1"><c r="A1" t="s"><v>7</v></c></row>')).toBe(true); // 없는 글자 번호
+    expect(rejects('<row r="1"><c r="A1"><v>1</v></c><c r="A1"><v>2</v></c></row>')).toBe(true); // 같은 칸 두 번
+    expect(rejects('<row r="2"><c r="A2"><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row>')).toBe(true); // 같은 행 두 번
+    expect(rejects('<row r="1"><c r="A1"><v>1</v></c>')).toBe(true); // 행이 닫히지 않고 끝남
+  });
+
   it('쓰기: 특수 문자가 든 글도 그대로 돌아온다', () => {
     const rows = [['a&b', '<tag>', '"q"', '한글 값'], ['', 'x']];
     expect(readXlsx(writeXlsx([{ name: 's&1', rows }]))).toEqual([['a&b', '<tag>', '"q"', '한글 값'], [null, 'x']]);

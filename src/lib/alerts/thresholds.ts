@@ -5,8 +5,11 @@
 //  - "사용 가능 수량" = 자산은 재고·사용 가능 상태의 대수, 주변기기는 보유 수량의 합.
 //  - 수량이 한계 수량 미만이 되면 부족(LOW), 한계 수량 × 여유 비율 이상으로 돌아오면 정상(OK).
 //    상태가 바뀔 때만 알림을 만든다(경계에서 오르내릴 때 알림이 쏟아지지 않게 여유 비율을 둔다).
-//  - 재고를 바꾸는 모든 처리가 끝에 evaluateForModel() 을 부른다. 한계 수량 행을 잠근 뒤에 수량을 세므로,
+//  - 재고를 바꾸는 모든 처리가 끝에 evaluateForModel(s)() 을 부른다. 한계 수량 행을 잠근 뒤에 수량을 세므로,
 //    동시에 일어난 두 처리 중 나중 것이 앞의 것까지 반영된 수량을 본다.
+//  - 잠금 순서: 재고(자산·재고 행)를 모두 바꾼 뒤, 마지막에, 관련된 한계 수량 전부를 ID 순으로 한 번에 잠근다.
+//    한 트랜잭션에서 한계 수량을 잠근 뒤에 다른 재고 행을 잠그지 않는다(교착 방지). 여러 행을 처리하는 엑셀 업로드는
+//    deferEvaluation() 으로 판정을 미뤘다가 끝에 한 번만 한다(잠금을 업로드 내내 잡고 있지 않도록).
 //  - 부서 범위가 제한된 사용자는 자기 범위의 부서에 대한 한계 수량만 보고 관리한다. 기업 전체 한계 수량은 범위 제한이 없는 사용자만.
 import type { Db } from '@/lib/db/context';
 import { writeAudit } from '@/lib/auth/audit';
@@ -40,7 +43,8 @@ interface EvalRow {
   id: string;
   department_id: string | null;
   min_qty: number;
-  warn_ratio: string;
+  /** 회복 기준 = ceil(한계 수량 × 여유 비율). DB 의 정확한 소수 계산으로 구한다(부동소수점 오차로 하나 커지지 않게). */
+  recover_at: number;
   state: 'OK' | 'LOW';
   qty: number;
   target_name: string;
@@ -48,20 +52,21 @@ interface EvalRow {
 }
 
 // 잠금(FOR UPDATE OF t)을 얻은 뒤에 읽기 시작한 쿼리로 수량을 세야 하므로, 잠그는 쿼리와 세는 쿼리를 나눈다.
-const SQL_THRESHOLD_LOCK_FOR_MODEL =
+// $2 모델들, $3 카테고리들. 모델에 직접 걸린 것, 그 모델의 카테고리에 걸린 것, 지정한 카테고리에 걸린 것.
+const SQL_THRESHOLD_LOCK_FOR_TARGETS =
   'SELECT t.id FROM app.stock_threshold t WHERE t.company_id = $1 AND t.is_active' +
-  ' AND (t.model_id = $2 OR t.category_id = (SELECT category_id FROM app.item_model WHERE id = $2 AND company_id = $1))' +
+  ' AND (t.model_id = ANY($2::uuid[]) OR t.category_id = ANY($3::uuid[])' +
+  '      OR t.category_id IN (SELECT m.category_id FROM app.item_model m WHERE m.id = ANY($2::uuid[]) AND m.company_id = $1))' +
   ' ORDER BY t.id FOR UPDATE OF t';
 const SQL_THRESHOLD_EVAL =
-  'SELECT t.id, t.department_id, t.min_qty, t.warn_ratio, t.state, ' + SQL_THRESHOLD_QTY + ' AS qty,' + SQL_THRESHOLD_TARGET +
+  'SELECT t.id, t.department_id, t.min_qty, ceil(t.min_qty * t.warn_ratio)::int AS recover_at, t.state, ' + SQL_THRESHOLD_QTY + ' AS qty,' + SQL_THRESHOLD_TARGET +
   ' FROM app.stock_threshold t' + SQL_THRESHOLD_JOINS + ' WHERE t.company_id = $1 AND t.id = ANY($2::uuid[]) ORDER BY t.id';
 
 async function evaluate(db: Db, companyId: string, ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const { rows } = await db.query<EvalRow>(SQL_THRESHOLD_EVAL, [companyId, ids]);
   for (const t of rows) {
-    const recoverAt = Math.ceil(t.min_qty * Number(t.warn_ratio));
-    const next = t.state === 'OK' ? (t.qty < t.min_qty ? 'LOW' : 'OK') : t.qty >= recoverAt ? 'OK' : 'LOW';
+    const next = t.state === 'OK' ? (t.qty < t.min_qty ? 'LOW' : 'OK') : t.qty >= t.recover_at ? 'OK' : 'LOW';
     if (next === t.state) continue;
     await db.query(
       "UPDATE app.stock_threshold SET state = $2, last_alert_at = CASE WHEN $2 = 'LOW' THEN now() ELSE last_alert_at END WHERE id = $1 AND company_id = $3",
@@ -73,18 +78,43 @@ async function evaluate(db: Db, companyId: string, ids: string[]): Promise<void>
   }
 }
 
-/** 이 모델(과 그 카테고리)에 걸린 한계 수량을 다시 계산한다. 재고를 바꾼 트랜잭션의 끝에서 부른다. */
-export async function evaluateForModel(db: Db, companyId: string, modelId: string): Promise<void> {
-  const locked = await db.query<{ id: string }>(SQL_THRESHOLD_LOCK_FOR_MODEL, [companyId, modelId]);
+/** 판정을 미루는 중인 트랜잭션과, 그동안 바뀐 모델들. */
+const deferred = new WeakMap<Db, Set<string>>();
+
+/** 이 트랜잭션의 판정을 flushEvaluation() 까지 미룬다(여러 행을 처리하는 엑셀 업로드용). */
+export function deferEvaluation(db: Db): void {
+  if (!deferred.has(db)) deferred.set(db, new Set());
+}
+
+/** 미뤄 둔 판정을 한 번에 한다. 트랜잭션에서 재고를 다 바꾼 뒤, 맨 끝에 부른다. */
+export async function flushEvaluation(db: Db, companyId: string): Promise<void> {
+  const models = deferred.get(db);
+  deferred.delete(db);
+  if (models?.size) await evaluateForTargets(db, companyId, { modelIds: [...models] });
+}
+
+/**
+ * 이 모델들(과 그 카테고리들), 카테고리들에 걸린 한계 수량을 다시 계산한다. 재고를 바꾼 처리의 맨 끝에서, 한 번만 부른다.
+ * 관련된 한계 수량을 ID 순으로 한 번에 잠근다.
+ */
+export async function evaluateForTargets(db: Db, companyId: string, targets: { modelIds?: string[]; categoryIds?: string[] }): Promise<void> {
+  const pending = deferred.get(db);
+  if (pending && !targets.categoryIds?.length) {
+    for (const id of targets.modelIds ?? []) pending.add(id);
+    return;
+  }
+  const locked = await db.query<{ id: string }>(SQL_THRESHOLD_LOCK_FOR_TARGETS, [companyId, targets.modelIds ?? [], targets.categoryIds ?? []]);
   await evaluate(db, companyId, locked.rows.map((r) => r.id));
 }
+
+export const evaluateForModel = (db: Db, companyId: string, modelId: string): Promise<void> => evaluateForTargets(db, companyId, { modelIds: [modelId] });
 
 // ─────────────────────────── 조회·관리 ───────────────────────────
 
 // $1 기업, $2 부서 범위(NULL = 전체). 범위가 제한된 사용자는 자기 부서의 한계 수량만 본다(기업 전체 것은 보지 못한다).
 const SQL_THRESHOLD_VISIBLE = ' t.company_id = $1 AND ($2::uuid[] IS NULL OR t.department_id = ANY($2)) ';
 const SQL_THRESHOLD_LIST =
-  'SELECT t.id, t.category_id, t.model_id, t.department_id, t.min_qty, t.warn_ratio::float8 AS warn_ratio, t.state, t.is_active, t.last_alert_at, ' +
+  'SELECT t.id, t.category_id, t.model_id, t.department_id, t.min_qty, t.warn_ratio::float8 AS warn_ratio, ceil(t.min_qty * t.warn_ratio)::int AS recover_at, t.state, t.is_active, t.last_alert_at, ' +
   SQL_THRESHOLD_QTY + ' AS qty,' + SQL_THRESHOLD_TARGET +
   ' FROM app.stock_threshold t' + SQL_THRESHOLD_JOINS + ' WHERE' + SQL_THRESHOLD_VISIBLE +
   // 사용 중인 것 먼저, 그 안에서 부족(LOW)한 것 먼저.

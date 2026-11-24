@@ -1,13 +1,19 @@
 # stockmgmt_02
 
-기업별 IT 자산 재고관리 SaaS (재구축). 현재 **0단계**: 프로젝트 구성, 전체 스키마, 자체 인증, 기업 격리.
+기업별 IT 자산 재고관리 SaaS (재구축). 여러 기업이 한 DB 를 쓰고, 기업 격리는 DB 의 행 수준 보안으로, 권한은 자체 권한 테이블로 관리한다.
+
+- 기능: 자체 로그인, 계정·역할·부서 범위, 기준 정보, 자산(개별 이력), 주변기기(수량), 엑셀 업로드, 한계 수량·알림, 메일 일정(발송은 아직 없음), 대시보드, 이력·감사 로그, 한국어·영어·중국어.
+- 운영(한 대의 PC 에서 Docker 로): [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+- 설계: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · 작업 규칙: [`CLAUDE.md`](CLAUDE.md) · 단계별 검토 기록: `docs/REVIEW-phase*.md`
+
+아래는 개발용 실행 방법이다.
 
 ## 필요한 것
 
 - Node 24
 - PostgreSQL 16
 
-## 로컬에서 실행
+## 로컬에서 실행 (개발)
 
 ```bash
 npm install
@@ -42,6 +48,8 @@ npm run check      # 타입 검사 + 전체 테스트
 
 테스트는 실제 PostgreSQL에 `stock_test` DB를 새로 만들어 마이그레이션부터 적용한다.
 접속 정보가 기본값과 다르면 `TEST_ADMIN_URL`, `TEST_OWNER_URL`, `TEST_APP_URL` 로 지정한다.
+
+화면(브라우저) 점검은 `npm run build && tests-e2e/run.sh` (Python playwright 와 Chrome 필요).
 
 ## 구조
 

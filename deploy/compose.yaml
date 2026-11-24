@@ -1,0 +1,65 @@
+# 한 대의 PC·서버에서 운영하기 위한 구성: PostgreSQL 16 + 앱.
+# 실행 순서와 설명은 docs/OPERATIONS.md. 비밀값은 이 폴더의 .env 파일에만 둔다(.env.example 을 복사해 채운다. 저장소에 올리지 않는다).
+#
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+#
+# 구성
+#   db       PostgreSQL. 자료는 이름 있는 볼륨(stockmgmt_pgdata)에 남는다. 호스트에 포트를 열지 않는다.
+#   migrate  한 번 실행되고 끝난다: 구조 적용 → 앱 역할 비밀번호·제한 설정. 소유자 계정은 여기서만 쓴다.
+#   app      앱 서버. 제한된 역할(stock_app)로만 접속한다. 이 PC 안(127.0.0.1)에만 포트를 연다.
+#            바깥에서 접속하게 하려면 Cloudflare Tunnel 같은 터널·역방향 프록시가 이 포트로 넘겨주게 한다.
+name: stockmgmt
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stockmgmt
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?deploy/.env 에 DB_OWNER_PASSWORD 를 정하세요}
+      TZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stockmgmt"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: { context: .., dockerfile: Dockerfile }
+    restart: "no"
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      MIGRATION_DATABASE_URL: postgres://postgres:${DB_OWNER_PASSWORD}@db:5432/stockmgmt
+      APP_DB_PASSWORD: ${DB_APP_PASSWORD:?deploy/.env 에 DB_APP_PASSWORD 를 정하세요(16자 이상)}
+    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/set-app-password.mjs && node scripts/set-role-limits.mjs"]
+
+  app:
+    build: { context: .., dockerfile: Dockerfile }
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      # 앱은 제한된 역할로만 접속한다. 소유자 계정 주소(MIGRATION_DATABASE_URL)는 여기에 넣지 않는다.
+      DATABASE_URL: postgres://stock_app:${DB_APP_PASSWORD}@db:5432/stockmgmt
+      OPERATOR_CODE: ${OPERATOR_CODE:-OPERATOR}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUSTED_IP_HEADER: ${TRUSTED_IP_HEADER:-}
+      HASH_CONCURRENCY: ${HASH_CONCURRENCY:-4}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    healthcheck:
+      # 로그인 화면이 열리는지 본다(로그인 없이 볼 수 있는 화면이다).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  pgdata:

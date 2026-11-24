@@ -14,7 +14,8 @@
     "db:set-app-password": "node scripts/set-app-password.mjs",
     "admin:create-system": "tsx scripts/create-system-admin.ts",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test"
+    "check": "npm run typecheck && npm run test",
+    "db:set-role-limits": "node scripts/set-role-limits.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",

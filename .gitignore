@@ -8,3 +8,11 @@ coverage/
 .DS_Store
 .vercel/
 tsconfig.tsbuildinfo
+
+# 운영 구성의 비밀값과 백업
+deploy/.env
+deploy/backups/
+
+# 화면 점검 결과물
+tests-e2e/.out/
+tests-e2e/__pycache__/

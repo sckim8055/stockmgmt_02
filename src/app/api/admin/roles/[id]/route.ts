@@ -1,0 +1,34 @@
+import { z } from 'zod';
+import { deleteRole, updateRole } from '@/lib/admin/roles';
+import { json } from '@/lib/http/errors';
+import { route } from '@/lib/http/route';
+
+const Body = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  description: z.string().trim().max(300).nullable().optional(),
+  isActive: z.boolean().optional(),
+  acl: z
+    .array(z.object({ resource: z.string().min(1).max(80), operation: z.string().min(1).max(20) }))
+    .max(500)
+    .optional(),
+});
+
+export const PATCH = route(
+  { access: 'permission', permission: { resource: 'admin.role', operation: 'update' }, body: Body },
+  async ({ body, id, actor, tenant, ip }) => {
+    const who = actor();
+    const roleId = id();
+    await tenant((db) => updateRole(db, who, roleId, body, ip));
+    return json({ ok: true });
+  },
+);
+
+export const DELETE = route(
+  { access: 'permission', permission: { resource: 'admin.role', operation: 'delete' } },
+  async ({ id, actor, tenant, ip }) => {
+    const who = actor();
+    const roleId = id();
+    await tenant((db) => deleteRole(db, who, roleId, ip));
+    return json({ ok: true });
+  },
+);

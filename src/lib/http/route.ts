@@ -7,13 +7,13 @@
 //  4) 선언된 접근 조건 검사: 사용자 유형(allow) 또는 권한(permission)
 //  5) 예외를 일관된 JSON 오류로 변환
 import type { z } from 'zod';
-import { withTenant, type Db } from '@/lib/db/context';
-import { hasPermission, type Permission } from '@/lib/auth/permission';
+import { isUuid, withTenant, type Db } from '@/lib/db/context';
 import { BusyError } from '@/lib/auth/password';
+import { hasPermission, type Permission } from '@/lib/auth/permission';
 import { resolveSession, type SessionUser, type UserType } from '@/lib/auth/session';
 import { env } from '@/lib/env';
 import { readCookie, sessionCookieName } from './cookies';
-import { HttpError, badRequest, forbidden, json, unauthorized } from './errors';
+import { HttpError, badRequest, forbidden, json, notFound, unauthorized } from './errors';
 
 type Access =
   /** 로그인 없이 호출 가능. 로그인 API 같은 극소수에만 쓴다. */
@@ -25,18 +25,33 @@ type Access =
   /** 권한 판정을 거친다. 업무 API의 기본. */
   | { access: 'permission'; permission: Permission };
 
+/** 요청을 보낸 사람. 기업 범위 안에서의 판정에 쓴다. */
+export interface Actor {
+  userId: string;
+  userType: UserType;
+  /** 작업 대상 기업. 기업 계정은 소속 기업, 시스템 관리자는 세션에서 고른 기업. */
+  companyId: string;
+  /** 기업 안에서 모든 권한을 갖는가(시스템 관리자, 기업 관리자). */
+  isAdmin: boolean;
+}
+
 export interface RouteContext<B> {
   req: Request;
   body: B;
   /** access 가 'public' 이 아니면 항상 있다. */
   user: SessionUser;
   ip: string | null;
-  /** 로그인한 사용자의 기업 범위로 DB에 접근한다. */
+  /** URL 경로의 [id]. UUID 형식이 아니면 404. */
+  id(): string;
+  /** 기업 범위의 요청자. 기업이 정해지지 않았으면(기업을 고르지 않은 시스템 관리자) 403. */
+  actor(): Actor;
+  /** 요청자의 기업 범위로 DB에 접근한다. */
   tenant<T>(fn: (db: Db) => Promise<T>): Promise<T>;
 }
 
 type Options<S extends z.ZodType | undefined> = Access & { body?: S };
 type BodyOf<S> = S extends z.ZodType ? z.infer<S> : undefined;
+type RouteExtra = { params?: Promise<Record<string, string | string[] | undefined>> };
 
 const IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
 
@@ -74,11 +89,16 @@ function assertSameOrigin(req: Request): void {
   if (!allowed.has(originHost)) throw forbidden('허용되지 않은 출처입니다.');
 }
 
+/** 권한 판정과 DB 접근에 쓰는 기업: 소속 기업, 없으면(시스템 관리자) 세션에서 고른 기업. */
+function effectiveCompanyId(user: SessionUser): string | null {
+  return user.companyId ?? user.actingCompanyId;
+}
+
 export function route<S extends z.ZodType | undefined = undefined>(
   options: Options<S>,
   handler: (ctx: RouteContext<BodyOf<S>>) => Promise<Response>,
-): (req: Request) => Promise<Response> {
-  return async (req: Request): Promise<Response> => {
+): (req: Request, extra?: RouteExtra) => Promise<Response> {
+  return async (req: Request, extra?: RouteExtra): Promise<Response> => {
     try {
       assertSameOrigin(req);
 
@@ -110,16 +130,30 @@ export function route<S extends z.ZodType | undefined = undefined>(
       }
 
       const current = user;
+      const params = extra?.params ? await extra.params : {};
+      const actor = (): Actor => {
+        // 기업 ID는 요청 본문이 아니라 세션에서만 가져온다.
+        const companyId = current ? effectiveCompanyId(current) : null;
+        if (!current || !companyId) throw forbidden('기업이 선택되지 않았습니다.');
+        return {
+          userId: current.userId,
+          userType: current.userType,
+          companyId,
+          isAdmin: current.userType === 'SYSTEM_ADMIN' || current.userType === 'COMPANY_ADMIN',
+        };
+      };
       return await handler({
         req,
         body: body as BodyOf<S>,
         user: current as SessionUser,
         ip: clientIp(req),
-        tenant: (fn) => {
-          // 기업 ID는 요청 본문이 아니라 세션에서만 가져온다.
-          if (!current?.companyId) throw forbidden('기업이 선택되지 않았습니다.');
-          return withTenant(current.companyId, fn);
+        id: () => {
+          const id = params.id;
+          if (!isUuid(id)) throw notFound();
+          return id;
         },
+        actor,
+        tenant: (fn) => withTenant(actor().companyId, fn),
       });
     } catch (err) {
       if (err instanceof HttpError) {

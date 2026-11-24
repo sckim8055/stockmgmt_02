@@ -23,7 +23,8 @@ export async function hasPermission(user: SessionUser, p: Permission): Promise<b
   if (!user.companyId) return false;
   if (user.userType === 'COMPANY_ADMIN') return true;
 
-  return withTenant(user.companyId, async (db) => {
+  const companyId = user.companyId;
+  return withTenant(companyId, async (db) => {
     const { rows } = await db.query(
       `SELECT 1
          FROM app.user_role ur

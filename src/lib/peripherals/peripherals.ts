@@ -100,7 +100,7 @@ const SQL_STOCK_HISTORY =
   ' FROM app.peripheral_txn t' +
   ' LEFT JOIN app.person p ON p.id = t.person_id AND p.company_id = t.company_id' +
   ' LEFT JOIN app.app_user u ON u.id = t.actor_id' +
-  ' WHERE t.stock_id = $1 AND t.company_id = $2 ORDER BY t.created_at DESC, t.id DESC LIMIT $3 OFFSET $4';
+  ' WHERE t.stock_id = $1 AND t.company_id = $2 ORDER BY t.created_at DESC, t.seq DESC LIMIT $3 OFFSET $4';
 const SQL_STOCK_VISIBLE =
   'SELECT 1 FROM app.peripheral_stock s WHERE s.id = $1 AND s.company_id = $2 AND ($3::uuid[] IS NULL OR s.department_id = ANY($3))';
 

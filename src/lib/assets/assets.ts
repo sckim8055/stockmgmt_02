@@ -185,7 +185,7 @@ export async function listAssetHistory(db: Db, actor: Actor, access: DataAccess,
        LEFT JOIN app.department td ON td.id = t.to_department_id
        LEFT JOIN app.app_user u ON u.id = t.actor_id
       WHERE t.asset_id = $1 AND t.company_id = $2
-      ORDER BY t.created_at DESC, t.id DESC
+      ORDER BY t.created_at DESC, t.seq DESC
       LIMIT 500`,
     [assetId, actor.companyId],
   );

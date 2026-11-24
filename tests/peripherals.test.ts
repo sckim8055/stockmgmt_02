@@ -213,7 +213,7 @@ describe('조정과 폐기', () => {
     expect((await post(adjustRoute, 'admin', { action: 'DISPOSE', stockId: s, qty: 10, note: '고장' })).status).toBe(409);
     expect((await post(adjustRoute, 'admin', { action: 'DISPOSE', stockId: s, qty: 4, note: '고장' })).status).toBe(200);
     expect(await qty(s)).toBe('5/0');
-    const txns = (await (await owner()).query("SELECT type, qty, note FROM app.peripheral_txn WHERE stock_id = $1 AND type IN ('ADJUST', 'DISPOSE') ORDER BY created_at, id", [s])).rows;
+    const txns = (await (await owner()).query("SELECT type, qty, note FROM app.peripheral_txn WHERE stock_id = $1 AND type IN ('ADJUST', 'DISPOSE') ORDER BY created_at, seq", [s])).rows;
     expect(txns).toEqual([
       { type: 'ADJUST', qty: -2, note: '실사 결과' },
       { type: 'ADJUST', qty: 1, note: '재실사' },

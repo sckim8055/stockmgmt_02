@@ -175,6 +175,10 @@ export function route<S extends z.ZodType | undefined = undefined>(
       if (err instanceof BusyError) {
         return json({ error: { code: 'BUSY', message: '요청이 많습니다. 잠시 후 다시 시도하세요.' } }, { status: 503 });
       }
+      // DB 고유 제약 위반: 사전 검사를 통과한 뒤 동시에 같은 값이 들어온 경우다. 500 대신 409로 응답한다.
+      if (typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505') {
+        return json({ error: { code: 'DUPLICATE', message: '이미 존재하는 값입니다.' } }, { status: 409 });
+      }
       console.error('[api] unhandled error', err);
       // 내부 오류 내용은 응답에 싣지 않는다.
       return json({ error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다.' } }, { status: 500 });

@@ -250,9 +250,10 @@ async function assertActiveDepartment(db: Db, actor: Actor, departmentId: string
   if (!rowCount) throw badRequest('선택할 수 없는 부서입니다.');
 }
 
+// 소문자로 저장해 둔 열(asset_tag_key, serial_key)과 비교한다. lower(열) 로 비교하면 RLS 때문에 인덱스를 쓰지 못한다(0008 마이그레이션 설명).
 async function assertUnique(db: Db, actor: Actor, v: { assetTag?: string; modelId?: string; serial?: string | null }, exceptId: string | null): Promise<void> {
   if (v.assetTag !== undefined) {
-    const r = await db.query('SELECT 1 FROM app.asset WHERE company_id = $1 AND lower(asset_tag) = lower($2) AND ($3::uuid IS NULL OR id <> $3)', [
+    const r = await db.query('SELECT 1 FROM app.asset WHERE company_id = $1 AND asset_tag_key = lower($2) AND ($3::uuid IS NULL OR id <> $3)', [
       actor.companyId,
       v.assetTag,
       exceptId,
@@ -262,7 +263,7 @@ async function assertUnique(db: Db, actor: Actor, v: { assetTag?: string; modelI
   }
   if (v.serial && v.modelId) {
     const r = await db.query(
-      'SELECT 1 FROM app.asset WHERE company_id = $1 AND model_id = $2 AND lower(serial_number) = lower($3) AND ($4::uuid IS NULL OR id <> $4)',
+      'SELECT 1 FROM app.asset WHERE company_id = $1 AND model_id = $2 AND serial_key = lower($3) AND ($4::uuid IS NULL OR id <> $4)',
       [actor.companyId, v.modelId, v.serial, exceptId],
     );
     if (r.rowCount) throw new HttpError(409, 'DUPLICATE', '같은 모델에 같은 시리얼 번호가 이미 있습니다.');

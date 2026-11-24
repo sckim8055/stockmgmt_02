@@ -20,9 +20,9 @@ export const GET = route(
 
 export const POST = route(
   { access: 'permission', permission: { resource: 'admin.role', operation: 'create' }, body: Body },
-  async ({ body, actor, tenant, ip }) => {
+  async ({ body, actor, tenant }) => {
     const who = actor();
-    const roleId = await tenant((db) => createRole(db, who, body, ip));
+    const roleId = await tenant((db) => createRole(db, who, body, who.auditIp));
     return json({ roleId }, { status: 201 });
   },
 );

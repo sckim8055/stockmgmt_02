@@ -26,14 +26,21 @@ export class UnsafeDbRoleError extends Error {}
 export async function assertSafeRole(q: { query: (text: string) => Promise<{ rows: any[] }> }): Promise<void> {
   const { rows } = await q.query(
     `SELECT r.rolname, r.rolsuper, r.rolbypassrls,
+            -- 테이블 소유자이거나 소유자 역할의 구성원(상속 여부와 무관하게)
             EXISTS (SELECT 1 FROM pg_class c
                       JOIN pg_namespace n ON n.oid = c.relnamespace
                      WHERE n.nspname = 'app' AND c.relkind IN ('r', 'p')
-                       AND pg_has_role(current_user, c.relowner, 'USAGE')) AS owns
+                       AND pg_has_role(current_user, c.relowner, 'MEMBER')) AS owns,
+            -- 슈퍼유저·BYPASSRLS 역할, 또는 모든 테이블을 읽고 쓰는 내장 역할의 구성원
+            -- (컬럼 권한과 추가 전용 규칙을 우회한다)
+            EXISTS (SELECT 1 FROM pg_roles x
+                     WHERE x.rolname <> current_user
+                       AND (x.rolsuper OR x.rolbypassrls OR x.rolname IN ('pg_read_all_data', 'pg_write_all_data'))
+                       AND pg_has_role(current_user, x.oid, 'MEMBER')) AS inherits_bypass
        FROM pg_roles r WHERE r.rolname = current_user`,
   );
   const r = rows[0];
-  if (!r || r.rolsuper || r.rolbypassrls || r.owns) {
+  if (!r || r.rolsuper || r.rolbypassrls || r.owns || r.inherits_bypass) {
     throw new UnsafeDbRoleError(
       `DATABASE_URL 의 역할(${r?.rolname ?? '?'})은 RLS를 우회할 수 있어 사용할 수 없습니다. ` +
         '앱 전용 역할(stock_app)의 접속 주소를 넣으세요. 소유자 계정은 MIGRATION_DATABASE_URL 에만 씁니다.',

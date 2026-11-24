@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useId, useState, type ReactNode } from 'react';
-import { api, Button, ErrorText, USER_TYPE_LABEL, type UserType } from './ui';
+import { api, Button, ErrorText, USER_TYPE_LABEL, type UserType, setExpectedCompany } from './ui';
 
 const T = {
   product: 'StockMgmt',
@@ -133,6 +133,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const { me, perms } = state;
+  // 자식 화면이 데이터를 부르기 전에 맞춰 둔다(자식의 effect 가 부모의 effect 보다 먼저 실행되므로 렌더 중에 설정한다).
+  setExpectedCompany(me.companyId ?? me.actingCompanyId);
   const permSet = new Set(perms.permissions);
   const can = (resource: string, operation: string) => perms.all || permSet.has(`${resource}:${operation}`);
   const value: ShellValue = {

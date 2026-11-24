@@ -33,6 +33,11 @@ export interface Actor {
   companyId: string;
   /** 기업 안에서 모든 권한을 갖는가(시스템 관리자, 기업 관리자). */
   isAdmin: boolean;
+  /**
+   * 기업의 감사 로그에 남길 IP. 시스템 관리자의 IP는 기업 로그에 남기지 않는다(null).
+   * 운영자의 접속 정보가 고객사에 노출되지 않게 하기 위해서다.
+   */
+  auditIp: string | null;
 }
 
 export interface RouteContext<B> {
@@ -135,11 +140,19 @@ export function route<S extends z.ZodType | undefined = undefined>(
         // 기업 ID는 요청 본문이 아니라 세션에서만 가져온다.
         const companyId = current ? effectiveCompanyId(current) : null;
         if (!current || !companyId) throw forbidden('기업이 선택되지 않았습니다.');
+        // 화면이 보고 있는 기업과 세션의 기업이 다르면 거부한다.
+        // (시스템 관리자가 다른 탭에서 기업을 바꾼 뒤, 이 탭의 요청이 엉뚱한 기업에 적용되는 것을 막는다)
+        // 이 헤더는 "확인용"일 뿐이다. 기업은 여전히 세션에서만 정해진다.
+        const expected = req.headers.get('x-expected-company');
+        if (expected && expected !== companyId) {
+          throw new HttpError(409, 'COMPANY_CHANGED', '작업 중인 기업이 바뀌었습니다. 화면을 새로 고친 뒤 다시 시도하세요.');
+        }
         return {
           userId: current.userId,
           userType: current.userType,
           companyId,
           isAdmin: current.userType === 'SYSTEM_ADMIN' || current.userType === 'COMPANY_ADMIN',
+          auditIp: current.userType === 'SYSTEM_ADMIN' ? null : clientIp(req),
         };
       };
       return await handler({

@@ -21,12 +21,12 @@ export const GET = route(
 
 export const POST = route(
   { access: 'permission', permission: { resource: 'admin.user', operation: 'create' }, body: Body },
-  async ({ body, actor, tenant, ip }) => {
+  async ({ body, actor, tenant }) => {
     const who = actor();
     // 해시 계산은 DB 연결을 잡기 전에 끝낸다.
     const tempPassword = generateTempPassword();
     const passwordHash = await hashPassword(tempPassword);
-    const userId = await tenant((db) => createUser(db, who, body, passwordHash, ip));
+    const userId = await tenant((db) => createUser(db, who, body, passwordHash, who.auditIp));
     // 임시 비밀번호는 이 응답에서 한 번만 내려간다.
     return json({ userId, tempPassword }, { status: 201 });
   },

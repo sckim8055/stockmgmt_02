@@ -23,6 +23,32 @@ export async function userPermissions(db: Db, userId: string): Promise<Set<strin
   return new Set(rows.map((r) => permKey(r.resource_code, r.operation)));
 }
 
+/**
+ * 계정에 "배정된" 모든 역할의 권한. 꺼져 있는(비활성) 역할도 포함한다.
+ * 대상 계정이 요청자보다 큰지 판단할 때는 이 값을 쓴다. 비활성 역할을 빼고 판단하면,
+ * 큰 역할이 잠시 꺼진 계정을 작은 권한의 담당자가 넘겨받은 뒤 역할이 다시 켜질 때 그 권한을 얻게 된다.
+ */
+export async function assignedPermissions(db: Db, userId: string): Promise<Set<string>> {
+  const { rows } = await db.query<{ resource_code: string; operation: string }>(
+    `SELECT DISTINCT a.resource_code, a.operation
+       FROM app.user_role ur
+       JOIN app.role_acl a ON a.role_id = ur.role_id
+      WHERE ur.user_id = $1`,
+    [userId],
+  );
+  return new Set(rows.map((r) => permKey(r.resource_code, r.operation)));
+}
+
+/**
+ * 한 기업 안의 계정·역할 변경을 한 줄로 세운다(트랜잭션이 끝날 때까지 유지되는 잠금).
+ * 권한 검사와 실제 변경 사이에 다른 요청이 역할이나 계정을 바꾸는 경쟁 상태,
+ * 두 관리자가 서로를 동시에 바꿀 때의 교착, 같은 이름의 동시 생성을 한꺼번에 막는다.
+ * 계정·역할 관리는 빈도가 낮아 직렬화해도 부담이 없다.
+ */
+export async function lockCompanyAdministration(db: Db, companyId: string): Promise<void> {
+  await db.query('SELECT pg_advisory_xact_lock(727002, hashtext($1))', [companyId]);
+}
+
 /** 계정의 부서 범위. null = 전체 부서. */
 export async function userScope(db: Db, userId: string): Promise<string[] | null> {
   const { rows } = await db.query<{ department_id: string }>(

@@ -3,7 +3,16 @@ import type { Db } from '@/lib/db/context';
 import { writeAudit } from '@/lib/auth/audit';
 import { TEMP_PASSWORD_TTL_HOURS } from '@/lib/auth/password';
 import { revokeAllSessions } from '@/lib/auth/session';
-import { actorPermissions, actorScope, permKey, userPermissions, userScope, withinPermissions, withinScope } from '@/lib/authz/grants';
+import {
+  actorPermissions,
+  actorScope,
+  assignedPermissions,
+  lockCompanyAdministration,
+  permKey,
+  userScope,
+  withinPermissions,
+  withinScope,
+} from '@/lib/authz/grants';
 import { HttpError, badRequest, forbidden, notFound } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
 
@@ -85,7 +94,7 @@ async function assertGrantable(
 /** 대상 계정을 찾고, 요청자가 그 계정을 관리할 수 있는지 확인한다. */
 async function loadManageable(db: Db, actor: Actor, targetId: string): Promise<TargetRow> {
   const { rows } = await db.query<TargetRow>(
-    'SELECT id, login_id, user_type, is_active FROM app.app_user WHERE id = $1 AND company_id = $2 FOR UPDATE',
+    'SELECT id, login_id, user_type, is_active FROM app.app_user WHERE id = $1 AND company_id = $2 FOR NO KEY UPDATE',
     [targetId, actor.companyId],
   );
   const target = rows[0];
@@ -95,9 +104,10 @@ async function loadManageable(db: Db, actor: Actor, targetId: string): Promise<T
   if (target.user_type !== 'COMPANY_USER') throw forbidden('기업 관리자 계정은 관리할 수 없습니다.');
   // 자기보다 권한이 크거나 범위가 넓은 계정은 건드릴 수 없다.
   // (그런 계정의 임시 비밀번호를 발급받으면 그 권한을 통째로 얻게 된다)
+  // 대상의 권한은 꺼져 있는 역할까지 포함해서 본다(assignedPermissions 설명 참고).
   const [mine, theirs, myScope, theirScope] = [
     await actorPermissions(db, actor),
-    await userPermissions(db, target.id),
+    await assignedPermissions(db, target.id),
     await actorScope(db, actor),
     await userScope(db, target.id),
   ];
@@ -152,6 +162,7 @@ export async function createUser(
   passwordHash: string,
   ip: string | null,
 ): Promise<string> {
+  await lockCompanyAdministration(db, actor.companyId);
   if (input.userType === 'COMPANY_ADMIN') {
     if (!actor.isAdmin) throw forbidden('기업 관리자 계정은 만들 수 없습니다.');
     if (input.roleIds.length > 0 || input.departmentIds.length > 0) {
@@ -208,6 +219,7 @@ export interface UpdateUserInput {
 }
 
 export async function updateUser(db: Db, actor: Actor, targetId: string, input: UpdateUserInput, ip: string | null): Promise<void> {
+  await lockCompanyAdministration(db, actor.companyId);
   const target = await loadManageable(db, actor, targetId);
   const changesAccess = input.userType !== undefined || input.roleIds !== undefined || input.departmentIds !== undefined;
   // 누구도 자기 계정의 유형·역할·부서 범위를 스스로 바꿀 수 없다.
@@ -262,9 +274,10 @@ async function roleIdsOf(db: Db, userId: string): Promise<string[]> {
 /** 기업의 마지막 활성 관리자를 없애는 변경은 시스템 관리자만 할 수 있다. */
 async function assertNotLastAdmin(db: Db, actor: Actor, targetId: string): Promise<void> {
   if (actor.userType === 'SYSTEM_ADMIN') return;
-  // 동시에 두 관리자가 서로를 비활성화해 관리자가 0명이 되는 것을 막기 위해 관리자 행을 잠근다.
+  // 동시에 두 관리자가 서로를 비활성화해 관리자가 0명이 되는 것을 막는다.
+  // (기업 단위 잠금으로 이미 한 줄로 서 있고, 관리자 행도 잠근다)
   const { rows } = await db.query<{ id: string }>(
-    "SELECT id FROM app.app_user WHERE company_id = $1 AND user_type = 'COMPANY_ADMIN' AND is_active ORDER BY id FOR UPDATE",
+    "SELECT id FROM app.app_user WHERE company_id = $1 AND user_type = 'COMPANY_ADMIN' AND is_active ORDER BY id FOR NO KEY UPDATE",
     [actor.companyId],
   );
   if (rows.filter((r) => r.id !== targetId).length === 0) {
@@ -273,6 +286,7 @@ async function assertNotLastAdmin(db: Db, actor: Actor, targetId: string): Promi
 }
 
 export async function setUserActive(db: Db, actor: Actor, targetId: string, active: boolean, ip: string | null): Promise<void> {
+  await lockCompanyAdministration(db, actor.companyId);
   const target = await loadManageable(db, actor, targetId);
   if (target.id === actor.userId) throw forbidden('자신의 계정 상태는 스스로 바꿀 수 없습니다.');
   if (target.is_active === active) return;
@@ -292,6 +306,7 @@ export async function setUserActive(db: Db, actor: Actor, targetId: string, acti
 
 /** 임시 비밀번호로 교체한다. 기존 세션을 모두 끊고 잠금을 푼다. passwordHash 는 호출자가 미리 계산한다. */
 export async function applyTempPassword(db: Db, actor: Actor, targetId: string, passwordHash: string, ip: string | null): Promise<void> {
+  await lockCompanyAdministration(db, actor.companyId);
   const target = await loadManageable(db, actor, targetId);
   if (target.id === actor.userId) throw forbidden('자신의 비밀번호는 비밀번호 변경 화면에서 바꿉니다.');
   if (!target.is_active) throw badRequest('비활성 계정입니다.');
@@ -315,6 +330,7 @@ export async function applyTempPassword(db: Db, actor: Actor, targetId: string, 
 }
 
 export async function unlockUser(db: Db, actor: Actor, targetId: string, ip: string | null): Promise<void> {
+  await lockCompanyAdministration(db, actor.companyId);
   const target = await loadManageable(db, actor, targetId);
   await db.query('UPDATE app.app_user SET failed_count = 0, locked_until = NULL WHERE id = $1', [target.id]);
   await writeAudit(db, {

@@ -15,20 +15,20 @@ const Body = z.object({
 
 export const PATCH = route(
   { access: 'permission', permission: { resource: 'admin.role', operation: 'update' }, body: Body },
-  async ({ body, id, actor, tenant, ip }) => {
+  async ({ body, id, actor, tenant }) => {
     const who = actor();
     const roleId = id();
-    await tenant((db) => updateRole(db, who, roleId, body, ip));
+    await tenant((db) => updateRole(db, who, roleId, body, who.auditIp));
     return json({ ok: true });
   },
 );
 
 export const DELETE = route(
   { access: 'permission', permission: { resource: 'admin.role', operation: 'delete' } },
-  async ({ id, actor, tenant, ip }) => {
+  async ({ id, actor, tenant }) => {
     const who = actor();
     const roleId = id();
-    await tenant((db) => deleteRole(db, who, roleId, ip));
+    await tenant((db) => deleteRole(db, who, roleId, who.auditIp));
     return json({ ok: true });
   },
 );

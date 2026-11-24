@@ -130,12 +130,15 @@ export async function setActingCompany(
     }
     await db.query('UPDATE app.user_session SET acting_company_id = $2 WHERE id = $1', [user.sessionId, companyId]);
     if (companyId) {
+      // 기업의 감사 로그: "운영자가 들어왔다"는 사실만 남긴다. 운영자의 로그인 ID와 IP는 싣지 않는다.
+      await writeAudit(db, { companyId, actorId: user.userId, action: 'SYSTEM_ADMIN_ENTERED', resource: 'system' });
+      // 시스템 감사 로그: 누가 어디서 어느 기업에 들어갔는지 남긴다.
       await writeAudit(db, {
-        companyId,
+        companyId: null,
         actorId: user.userId,
         action: 'SYSTEM_ADMIN_ENTERED',
         resource: 'system',
-        after: { operator: user.loginId },
+        targetId: companyId,
         ip,
       });
     }

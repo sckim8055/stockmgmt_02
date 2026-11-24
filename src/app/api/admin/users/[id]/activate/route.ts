@@ -4,10 +4,10 @@ import { route } from '@/lib/http/route';
 
 export const POST = route(
   { access: 'permission', permission: { resource: 'admin.user', operation: 'activate' } },
-  async ({ id, actor, tenant, ip }) => {
+  async ({ id, actor, tenant }) => {
     const who = actor();
     const targetId = id();
-    await tenant((db) => setUserActive(db, who, targetId, true, ip));
+    await tenant((db) => setUserActive(db, who, targetId, true, who.auditIp));
     return json({ ok: true });
   },
 );

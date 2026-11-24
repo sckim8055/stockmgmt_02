@@ -14,10 +14,10 @@ const Body = z.object({
 
 export const PATCH = route(
   { access: 'permission', permission: { resource: 'admin.user', operation: 'update' }, body: Body },
-  async ({ body, id, actor, tenant, ip }) => {
+  async ({ body, id, actor, tenant }) => {
     const who = actor();
     const targetId = id();
-    await tenant((db) => updateUser(db, who, targetId, body, ip));
+    await tenant((db) => updateUser(db, who, targetId, body, who.auditIp));
     return json({ ok: true });
   },
 );

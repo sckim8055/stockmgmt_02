@@ -1,7 +1,7 @@
 // 역할 관리. 모든 함수는 tenant() 트랜잭션 안에서 호출한다.
 import type { Db } from '@/lib/db/context';
 import { writeAudit } from '@/lib/auth/audit';
-import { actorPermissions, permKey, withinPermissions } from '@/lib/authz/grants';
+import { actorPermissions, lockCompanyAdministration, permKey, withinPermissions } from '@/lib/authz/grants';
 import { HttpError, badRequest, forbidden, notFound } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
 
@@ -75,7 +75,7 @@ async function currentAcl(db: Db, roleId: string): Promise<string[]> {
 /** 자기 기업의 역할을 찾는다. 요청자가 가진 권한보다 큰 역할은 고칠 수 없다. */
 async function loadEditable(db: Db, actor: Actor, roleId: string): Promise<{ id: string; name: string; acl: string[] }> {
   const { rows } = await db.query<{ id: string; name: string }>(
-    'SELECT id, name FROM app.role WHERE id = $1 AND company_id = $2 FOR UPDATE',
+    'SELECT id, name FROM app.role WHERE id = $1 AND company_id = $2 FOR NO KEY UPDATE',
     [roleId, actor.companyId],
   );
   const role = rows[0];
@@ -103,6 +103,7 @@ export async function createRole(
   input: { name: string; description?: string | null; acl: AclEntry[] },
   ip: string | null,
 ): Promise<string> {
+  await lockCompanyAdministration(db, actor.companyId);
   await assertAclAllowed(db, actor, input.acl);
   await assertNameFree(db, actor, input.name, null);
   const { rows } = await db.query<{ id: string }>(
@@ -130,6 +131,7 @@ export async function updateRole(
   input: { name?: string; description?: string | null; isActive?: boolean; acl?: AclEntry[] },
   ip: string | null,
 ): Promise<void> {
+  await lockCompanyAdministration(db, actor.companyId);
   const role = await loadEditable(db, actor, roleId);
   if (input.acl) await assertAclAllowed(db, actor, input.acl);
   if (input.name !== undefined) await assertNameFree(db, actor, input.name, role.id);
@@ -155,6 +157,7 @@ export async function updateRole(
 }
 
 export async function deleteRole(db: Db, actor: Actor, roleId: string, ip: string | null): Promise<void> {
+  await lockCompanyAdministration(db, actor.companyId);
   const role = await loadEditable(db, actor, roleId);
   const used = await db.query('SELECT 1 FROM app.user_role WHERE role_id = $1 LIMIT 1', [role.id]);
   if (used.rowCount) throw new HttpError(409, 'IN_USE', '사용자에게 배정된 역할은 삭제할 수 없습니다. 비활성화하세요.');

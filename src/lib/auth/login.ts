@@ -112,6 +112,17 @@ export async function login(input: LoginInput): Promise<LoginResult> {
 
   // 3) 기록. 실패해도 실패 횟수와 감사 로그를 남겨야 하므로 예외를 던지지 않고 결과를 돌려준다.
   return withSystem(async (db): Promise<LoginResult> => {
+    if (ip) {
+      // 같은 IP의 시도를 한 줄로 세우고 실패 횟수를 다시 센다. 요청을 한꺼번에 보내 한도를 넘기는 것을 막는다.
+      // 한도를 넘은 시도는 비밀번호가 맞았더라도 결과를 알려주지 않는다.
+      await db.query('SELECT pg_advisory_xact_lock(727003, hashtext($1))', [ip]);
+      const { rows } = await db.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM app.audit_log
+          WHERE action = 'LOGIN_FAILED' AND ip = $1 AND created_at > now() - make_interval(mins => $2)`,
+        [ip, LOCK_MINUTES],
+      );
+      if ((rows[0]?.n ?? 0) >= IP_FAIL_LIMIT) return { ok: false, reason: 'RATE_LIMITED' };
+    }
     let now: AccountState | undefined;
     if (found) {
       const { rows } = await db.query<AccountState>(SQL_ACCOUNT_BY_ID_LOCKED, [found.id]);

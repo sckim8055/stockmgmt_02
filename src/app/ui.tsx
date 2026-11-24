@@ -65,6 +65,16 @@ export type ApiResult<T> =
 
 const FALLBACK_ERROR = '요청을 처리하지 못했습니다.';
 
+// 이 화면이 보고 있는 기업. 기업 데이터 API를 부를 때 확인용 헤더로 보낸다.
+// 시스템 관리자가 다른 탭에서 기업을 바꾸면 서버가 409(COMPANY_CHANGED)로 거부해,
+// 이 탭의 요청이 엉뚱한 기업에 적용되지 않는다. 기업 자체는 서버가 세션으로만 정한다.
+let expectedCompany: string | null = null;
+export function setExpectedCompany(companyId: string | null): void {
+  expectedCompany = companyId;
+}
+// 기업과 무관한 API(내 정보, 인증, 시스템 관리)에는 헤더를 붙이지 않는다.
+const COMPANY_NEUTRAL = ['/api/me', '/api/auth/', '/api/system/'];
+
 function readError(raw: unknown): ApiError | null {
   if (typeof raw !== 'object' || raw === null || !('error' in raw)) return null;
   const e = (raw as { error: unknown }).error;
@@ -87,7 +97,10 @@ export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: s
   try {
     res = await fetch(url, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers: {
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(expectedCompany && !COMPANY_NEUTRAL.some((p) => url.startsWith(p)) ? { 'x-expected-company': expectedCompany } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
     });

@@ -7,6 +7,7 @@
 //  - 지급(ISSUE)은 돌려받지 않는 소모성 출고, 대여(LOAN)는 돌려받을 것. 대여만 미반납 현황에 잡힌다.
 //  - 이력의 qty 부호: 보유 수량이 늘면 +, 줄면 -. 대여 분실(LOAN_LOSS)은 대여 중 수량이 줄어든 것이라 -.
 import type { Db } from '@/lib/db/context';
+import { evaluateForModel } from '@/lib/alerts/thresholds';
 import { writeAudit } from '@/lib/auth/audit';
 import type { DataAccess } from '@/lib/authz/scope';
 import { badRequest, forbidden, HttpError, notFound } from '@/lib/http/errors';
@@ -193,6 +194,7 @@ export async function receiveStock(db: Db, actor: Actor, access: DataAccess, inp
   if (onHand + stock.on_loan_qty > MAX_QTY) throw tooMany();
   await setQty(db, actor, stock.id, onHand, stock.on_loan_qty);
   await writeTxn(db, actor, stock.id, { type: input.initial ? 'INITIAL' : 'RECEIVE', qty: input.qty, note: input.note });
+  await evaluateForModel(db, actor.companyId, stock.model_id);
   return { stockId: stock.id, onHandQty: onHand };
 }
 
@@ -230,6 +232,7 @@ export async function issueStock(db: Db, actor: Actor, access: DataAccess, input
     }
     await setQty(db, actor, stock.id, onHand, onLoan);
     await writeTxn(db, actor, stock.id, { type: input.action, qty: -input.qty, personId: input.personId, loanId, locationNote: input.locationNote, note: input.note });
+    await evaluateForModel(db, actor.companyId, stock.model_id);
     return { stockId: stock.id, loanId, onHandQty: onHand, onLoanQty: onLoan };
   }
 
@@ -260,6 +263,7 @@ export async function issueStock(db: Db, actor: Actor, access: DataAccess, input
   await writeTxn(db, actor, stock.id, {
     type: input.action, qty: input.action === 'RETURN' ? input.qty : -input.qty, personId: loan.person_id, loanId: loan.id, note: input.note,
   });
+  await evaluateForModel(db, actor.companyId, stock.model_id);
   return { stockId: stock.id, loanId: loan.id, onHandQty: onHand, onLoanQty: onLoan };
 }
 
@@ -291,6 +295,7 @@ export async function adjustStock(db: Db, actor: Actor, access: DataAccess, inpu
     resource: 'peripheral.adjust', targetId: stock.id,
     before: { onHandQty: stock.on_hand_qty }, after: { onHandQty: onHand, note: input.note }, ip: actor.auditIp,
   });
+  await evaluateForModel(db, actor.companyId, stock.model_id);
   return { stockId: stock.id, onHandQty: onHand };
 }
 

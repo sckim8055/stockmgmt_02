@@ -16,6 +16,7 @@ const Query = z.object({
   holderPersonId: z.uuid().optional(),
   q: str().max(100).optional(),
   includeVoid: z.enum(['true', 'false']).optional(),
+  overdue: z.enum(['true', 'false']).optional(),
   sort: z.enum(ASSET_SORT_KEYS).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
@@ -42,9 +43,9 @@ export const GET = route(
     const who = actor();
     const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
     if (!parsed.success) throw badRequest('조회 조건이 올바르지 않습니다.');
-    const { includeVoid, ...rest } = parsed.data;
+    const { includeVoid, overdue, ...rest } = parsed.data;
     const result = await tenant(async (db) =>
-      listAssets(db, who, await loadDataAccess(db, who), { ...rest, includeVoid: includeVoid === 'true' }),
+      listAssets(db, who, await loadDataAccess(db, who), { ...rest, includeVoid: includeVoid === 'true', overdue: overdue === 'true' }),
     );
     return json(result);
   },

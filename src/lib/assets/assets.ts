@@ -4,6 +4,7 @@
 //   1) 부서 범위: access.scope 를 SQL 조건에 넣는다. 범위 밖 자산은 "없는 것"으로 응답한다(404).
 //   2) 제한 필드: 읽기 권한이 없는 필드는 응답에서 빼고(present), 정렬·검색에도 쓸 수 없게 한다.
 import type { Db } from '@/lib/db/context';
+import { evaluateForModel } from '@/lib/alerts/thresholds';
 import { writeAudit } from '@/lib/auth/audit';
 import type { DataAccess } from '@/lib/authz/scope';
 import { HttpError, badRequest, forbidden, notFound } from '@/lib/http/errors';
@@ -42,10 +43,12 @@ const SQL_ASSET_FILTERS =
   ' AND ($9::text IS NULL OR a.asset_tag ILIKE $9 OR a.serial_number ILIKE $9 OR a.location ILIKE $9' +
   '      OR m.name ILIKE $9 OR m.manufacturer ILIKE $9 OR p.name ILIKE $9)' +
   // $10 = 목록에서 뺄 상태들. 등록 취소(VOID)된 자산은 따로 요청할 때만 보인다.
-  ' AND a.state <> ALL($10::text[]) ';
+  ' AND a.state <> ALL($10::text[])' +
+  // $11 = 반납 기한이 지난 대여만
+  " AND (NOT $11::boolean OR (a.state = 'IN_USE' AND a.due_date < current_date)) ";
 
 const SQL_ASSET_LIST_BASE = 'SELECT' + SQL_ASSET_COLUMNS + SQL_ASSET_FROM + 'WHERE' + SQL_ASSET_VISIBLE + SQL_ASSET_FILTERS;
-const SQL_ASSET_PAGE = ', a.id LIMIT $11 OFFSET $12';
+const SQL_ASSET_PAGE = ', a.id LIMIT $12 OFFSET $13';
 const SQL_ASSET_COUNT = 'SELECT count(*)::int AS n' + SQL_ASSET_FROM + 'WHERE' + SQL_ASSET_VISIBLE + SQL_ASSET_FILTERS;
 
 // 정렬은 이 목록에 있는 것만 허용한다. 입력값이 SQL 에 들어가지 않는다.
@@ -64,6 +67,8 @@ const SQL_ASSET_LIST_BY: Record<string, string> = {
   'warranty_end:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.warranty_end DESC NULLS LAST' + SQL_ASSET_PAGE,
   'purchase_date:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.purchase_date ASC NULLS LAST' + SQL_ASSET_PAGE,
   'purchase_date:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.purchase_date DESC NULLS LAST' + SQL_ASSET_PAGE,
+  'due_date:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.due_date ASC NULLS LAST' + SQL_ASSET_PAGE,
+  'due_date:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.due_date DESC NULLS LAST' + SQL_ASSET_PAGE,
   'updated_at:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.updated_at ASC' + SQL_ASSET_PAGE,
   'updated_at:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.updated_at DESC' + SQL_ASSET_PAGE,
   // 제한 필드로 정렬하려면 그 필드의 읽기 권한이 있어야 한다(listAssets 에서 검사).
@@ -71,7 +76,7 @@ const SQL_ASSET_LIST_BY: Record<string, string> = {
   'purchase_price:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.purchase_price DESC NULLS LAST' + SQL_ASSET_PAGE,
 };
 export const ASSET_SORT_KEYS = [
-  'asset_tag', 'state', 'model', 'department', 'holder', 'warranty_end', 'purchase_date', 'updated_at', 'purchase_price',
+  'asset_tag', 'state', 'model', 'department', 'holder', 'warranty_end', 'purchase_date', 'due_date', 'updated_at', 'purchase_price',
 ] as const;
 export type AssetSortKey = (typeof ASSET_SORT_KEYS)[number];
 
@@ -122,6 +127,8 @@ export interface AssetListQuery {
   holderPersonId?: string;
   q?: string;
   includeVoid?: boolean;
+  /** 반납 기한이 지난 대여만 */
+  overdue?: boolean;
   sort?: AssetSortKey;
   order?: 'asc' | 'desc';
   page?: number;
@@ -150,6 +157,7 @@ export async function listAssets(db: Db, actor: Actor, access: DataAccess, query
     query.holderPersonId ?? null,
     q ? likePattern(q) : null,
     query.includeVoid ? [] : ['VOID'],
+    query.overdue ?? false,
   ];
   const sortKey = `${sort}:${query.order ?? 'asc'}`;
   if (!Object.hasOwn(SQL_ASSET_LIST_BY, sortKey)) throw badRequest('정렬 기준이 올바르지 않습니다.');
@@ -331,6 +339,7 @@ export async function createAsset(db: Db, actor: Actor, access: DataAccess, inpu
     after: { assetTag: input.assetTag }, // 제한 필드 값은 감사 로그에 싣지 않는다
     ip: actor.auditIp,
   });
+  await evaluateForModel(db, actor.companyId, input.modelId);
   return assetId;
 }
 
@@ -425,6 +434,12 @@ export async function updateAsset(db: Db, actor: Actor, access: DataAccess, asse
     ],
   );
 
+  // 모델이나 관리 부서가 바뀌면 양쪽의 사용 가능 수량이 달라진다.
+  if (departmentChanged || (input.modelId !== undefined && input.modelId !== before.model_id)) {
+    await evaluateForModel(db, actor.companyId, before.model_id);
+    if (input.modelId !== undefined && input.modelId !== before.model_id) await evaluateForModel(db, actor.companyId, input.modelId);
+  }
+
   // 이력에는 "무엇이 바뀌었는지"만 남긴다. 제한 필드의 값은 남기지 않는다.
   const changed = Object.entries(input).filter(([, v]) => v !== undefined).map(([k]) => k);
   if (departmentChanged) {
@@ -498,5 +513,8 @@ export async function actOnAsset(db: Db, actor: Actor, access: DataAccess, asset
       asset.holder_person_id, next.holderPersonId, asset.location, location, input.note?.trim() || null, actor.userId,
     ],
   );
+  // 사용 가능 수량이 바뀌었을 수 있다. 한계 수량을 다시 본다.
+  const model = await db.query<{ model_id: string }>('SELECT model_id FROM app.asset WHERE id = $1 AND company_id = $2', [asset.id, actor.companyId]);
+  await evaluateForModel(db, actor.companyId, model.rows[0]!.model_id);
   return { state: next.state, substate: next.substate };
 }

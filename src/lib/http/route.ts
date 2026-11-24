@@ -9,8 +9,10 @@
 import type { z } from 'zod';
 import { withTenant, type Db } from '@/lib/db/context';
 import { hasPermission, type Permission } from '@/lib/auth/permission';
-import { resolveSession, SESSION_COOKIE, type SessionUser, type UserType } from '@/lib/auth/session';
-import { readCookie } from './cookies';
+import { BusyError } from '@/lib/auth/password';
+import { resolveSession, type SessionUser, type UserType } from '@/lib/auth/session';
+import { env } from '@/lib/env';
+import { readCookie, sessionCookieName } from './cookies';
 import { HttpError, badRequest, forbidden, json, unauthorized } from './errors';
 
 type Access =
@@ -36,10 +38,19 @@ export interface RouteContext<B> {
 type Options<S extends z.ZodType | undefined> = Access & { body?: S };
 type BodyOf<S> = S extends z.ZodType ? z.infer<S> : undefined;
 
+const IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
+
+/**
+ * 접속자 IP. 신뢰하도록 설정한 프록시 헤더(TRUSTED_IP_HEADER)에서만 읽는다.
+ * x-forwarded-for 처럼 클라이언트가 마음대로 넣을 수 있는 헤더를 그대로 믿으면
+ * IP 기준 제한을 피하거나, 남의 IP를 사칭해 그 사람의 로그인을 막을 수 있다.
+ * 값이 목록이면 가장 가까운 프록시가 붙인 마지막 값을 쓴다.
+ */
 export function clientIp(req: Request): string | null {
-  const fwd = req.headers.get('x-forwarded-for');
-  const first = fwd?.split(',')[0]?.trim();
-  return first || req.headers.get('x-real-ip') || null;
+  const header = env.trustedIpHeader;
+  if (!header) return null;
+  const value = req.headers.get(header)?.split(',').at(-1)?.trim();
+  return value && IP_RE.test(value) ? value : null;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -73,7 +84,7 @@ export function route<S extends z.ZodType | undefined = undefined>(
 
       let user: SessionUser | null = null;
       if (options.access !== 'public') {
-        user = await resolveSession(readCookie(req, SESSION_COOKIE));
+        user = await resolveSession(readCookie(req, sessionCookieName()));
         if (!user) throw unauthorized();
         if (options.access !== 'self' && user.mustChangePassword) {
           throw new HttpError(403, 'PASSWORD_CHANGE_REQUIRED', '비밀번호를 먼저 변경해야 합니다.');
@@ -113,6 +124,9 @@ export function route<S extends z.ZodType | undefined = undefined>(
     } catch (err) {
       if (err instanceof HttpError) {
         return json({ error: { code: err.code, message: err.message } }, { status: err.status });
+      }
+      if (err instanceof BusyError) {
+        return json({ error: { code: 'BUSY', message: '요청이 많습니다. 잠시 후 다시 시도하세요.' } }, { status: 503 });
       }
       console.error('[api] unhandled error', err);
       // 내부 오류 내용은 응답에 싣지 않는다.

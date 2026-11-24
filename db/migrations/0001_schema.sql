@@ -70,6 +70,17 @@ CREATE TABLE app.app_user (
 CREATE UNIQUE INDEX app_user_company_login_key ON app.app_user (company_id, lower(login_id)) WHERE company_id IS NOT NULL;
 CREATE UNIQUE INDEX app_user_system_login_key ON app.app_user (lower(login_id)) WHERE company_id IS NULL;
 
+-- 비밀번호 해시는 인증 처리(시스템 문맥)에서만 읽을 수 있다.
+-- 앱 역할에는 password_hash 컬럼의 SELECT 권한을 주지 않고(0002), 이 함수로만 읽게 한다.
+CREATE FUNCTION app.auth_password_hash(p_user_id uuid) RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog
+AS $$
+  SELECT CASE WHEN app.ctx_is_system()
+              THEN (SELECT u.password_hash FROM app.app_user u WHERE u.id = p_user_id)
+         END
+$$;
+
 CREATE TABLE app.user_session (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id       uuid NOT NULL REFERENCES app.app_user (id) ON DELETE CASCADE,
@@ -138,6 +149,20 @@ CREATE TABLE app.department (
 );
 CREATE UNIQUE INDEX department_company_name_key ON app.department (company_id, lower(name));
 CREATE UNIQUE INDEX department_one_default_key ON app.department (company_id) WHERE is_default;
+
+-- 기본 부서(IT)는 기본 지정을 해제하거나 삭제할 수 없다. (관리 부서 기본값이 사라지는 것을 막는다)
+CREATE FUNCTION app.protect_default_department() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.is_default AND (TG_OP = 'DELETE' OR NOT NEW.is_default) THEN
+    RAISE EXCEPTION '기본 부서는 삭제하거나 기본 지정을 해제할 수 없습니다.' USING ERRCODE = 'check_violation';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER department_protect_default BEFORE UPDATE OR DELETE ON app.department
+  FOR EACH ROW EXECUTE FUNCTION app.protect_default_department();
 
 -- 계정에 배정된 역할. 계정과 역할이 같은 기업이어야 한다(복합 외래키로 강제).
 CREATE TABLE app.user_role (
@@ -313,7 +338,13 @@ CREATE TABLE app.asset_txn (
   note                text,
   actor_id            uuid REFERENCES app.app_user (id),
   created_at          timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (asset_id, company_id) REFERENCES app.asset (id, company_id)
+  FOREIGN KEY (asset_id, company_id) REFERENCES app.asset (id, company_id),
+  FOREIGN KEY (from_holder_id, company_id) REFERENCES app.person (id, company_id),
+  FOREIGN KEY (to_holder_id, company_id) REFERENCES app.person (id, company_id),
+  FOREIGN KEY (from_department_id, company_id) REFERENCES app.department (id, company_id),
+  FOREIGN KEY (to_department_id, company_id) REFERENCES app.department (id, company_id)
+  -- actor_id 는 복합 외래키로 묶지 않는다: 시스템 관리자(company_id NULL)도 기업 안에서 작업한다.
+  -- 대신 서버는 actor_id 를 항상 세션에서 가져오고 입력값으로 받지 않는다.
 );
 CREATE INDEX asset_txn_asset_idx ON app.asset_txn (asset_id, created_at DESC);
 CREATE INDEX asset_txn_company_time_idx ON app.asset_txn (company_id, created_at DESC);
@@ -461,7 +492,8 @@ CREATE TABLE app.mail_job (
   CONSTRAINT mail_job_id_company_key UNIQUE (id, company_id),
   -- 같은 스케줄의 같은 회차는 한 번만 만들어진다(중복 발송 방지).
   CONSTRAINT mail_job_once_key UNIQUE (schedule_id, scheduled_for),
-  FOREIGN KEY (schedule_id, company_id) REFERENCES app.mail_schedule (id, company_id) ON DELETE CASCADE
+  -- 발송 기록이 있는 스케줄은 지워지지 않는다(이력 보존). 스케줄 삭제 기능은 비활성화로 구현한다.
+  FOREIGN KEY (schedule_id, company_id) REFERENCES app.mail_schedule (id, company_id)
 );
 
 CREATE TABLE app.mail_log (

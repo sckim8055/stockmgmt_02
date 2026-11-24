@@ -6,10 +6,16 @@ import { route } from '@/lib/http/route';
 
 const SYSTEM_ONLY = { access: 'type', allow: ['SYSTEM_ADMIN'] } as const;
 
+const TIMEZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')]);
+
 const Body = z.object({
   code: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/, '영문·숫자·-·_ 2~32자'),
   name: z.string().trim().min(1).max(100),
-  timezone: z.string().max(64).optional(),
+  timezone: z
+    .string()
+    .max(64)
+    .refine((tz) => TIMEZONES.has(tz), '지원하지 않는 시간대입니다.')
+    .optional(),
   locale: z.enum(['ko', 'en', 'zh']).optional(),
   admin: z.object({
     loginId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._@-]{2,63}$/, '영문·숫자·._@- 3~64자'),

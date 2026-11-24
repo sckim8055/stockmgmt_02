@@ -74,8 +74,9 @@ export async function createCompany(
       );
       const adminUserId = admin.rows[0]!.id;
 
+      // 시스템 수준 사건으로 남긴다(기업의 감사 로그에 운영자 계정·IP가 노출되지 않게).
       await writeAudit(db, {
-        companyId,
+        companyId: null,
         actorId: actor.userId,
         action: 'COMPANY_CREATED',
         resource: 'system.company',

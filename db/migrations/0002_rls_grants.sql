@@ -17,11 +17,11 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA app FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA app REVOKE ALL ON TABLES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA app REVOKE ALL ON FUNCTIONS FROM PUBLIC;
 
--- Supabase가 만들어 두는 브라우저용 역할이 있으면 명시적으로 회수한다.
+-- Supabase가 만들어 두는 역할이 있으면 명시적으로 회수한다. (service_role 은 RLS를 우회하므로 스키마 접근 자체를 막는다)
 DO $$
 DECLARE r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['anon', 'authenticated']
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role']
   LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('REVOKE ALL ON SCHEMA app FROM %I', r);
@@ -35,23 +35,34 @@ END $$;
 -- ─────────────────────────── stock_app 권한 ───────────────────────────
 
 GRANT USAGE ON SCHEMA app TO stock_app;
-GRANT EXECUTE ON FUNCTION app.ctx_company_id(), app.ctx_is_system() TO stock_app;
+GRANT EXECUTE ON FUNCTION app.ctx_company_id(), app.ctx_is_system(), app.auth_password_hash(uuid) TO stock_app;
 
 -- 읽기 전용 (시스템 정의 데이터)
 GRANT SELECT ON app.sys_resource, app.sys_resource_operation TO stock_app;
 
 -- 삭제 없음 (비활성화만)
-GRANT SELECT, INSERT, UPDATE ON app.company, app.app_user, app.asset, app.person TO stock_app;
+GRANT SELECT, INSERT, UPDATE ON app.company, app.asset, app.person TO stock_app;
+
+-- app_user: password_hash 는 읽을 수 없다(쓰기만 가능). 읽기는 app.auth_password_hash() 로만.
+-- 주의: app_user 에 컬럼을 추가하는 마이그레이션은 그 컬럼의 SELECT 권한도 함께 줘야 한다.
+GRANT INSERT, UPDATE ON app.app_user TO stock_app;
+GRANT SELECT (id, company_id, login_id, email, display_name, user_type, lang, is_active, must_change_password,
+              temp_password_expires_at, failed_count, locked_until, password_changed_at, created_by,
+              created_at, updated_at)
+  ON app.app_user TO stock_app;
 
 -- 추가만 가능 (이력·감사)
 GRANT SELECT, INSERT ON app.asset_txn, app.peripheral_txn, app.audit_log, app.mail_log TO stock_app;
+
+-- 발송 작업: 삭제 없음 (발송 이력 보존)
+GRANT SELECT, INSERT, UPDATE ON app.mail_job TO stock_app;
 
 -- 일반
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   app.user_session, app.role, app.role_acl, app.user_role, app.user_department_scope,
   app.department, app.category, app.item_model, app.custom_field_def,
   app.peripheral_stock, app.peripheral_loan, app.stock_threshold, app.notification,
-  app.mail_schedule, app.mail_recipient, app.mail_job
+  app.mail_schedule, app.mail_recipient
 TO stock_app;
 
 -- schema_migration 테이블은 stock_app 에게 주지 않는다.

@@ -4,6 +4,7 @@ import pg from 'pg';
 
 const url = process.env.MIGRATION_DATABASE_URL;
 const password = process.env.APP_DB_PASSWORD;
+const appRole = process.env.APP_DB_ROLE ?? 'stock_app';
 if (!url || !password) {
   console.error('MIGRATION_DATABASE_URL 과 APP_DB_PASSWORD 가 모두 필요합니다.');
   process.exit(1);
@@ -15,9 +16,9 @@ if (password.length < 16) {
 const client = new pg.Client({ connectionString: url });
 await client.connect();
 try {
-  const { rows } = await client.query("SELECT format('ALTER ROLE stock_app LOGIN PASSWORD %L', $1::text) AS sql", [password]);
+  const { rows } = await client.query("SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', $2::text, $1::text) AS sql", [password, appRole]);
   await client.query(rows[0].sql);
-  console.log('stock_app 비밀번호를 설정했습니다.');
+  console.log(`${appRole} 비밀번호를 설정했습니다.`);
 } finally {
   await client.end();
 }

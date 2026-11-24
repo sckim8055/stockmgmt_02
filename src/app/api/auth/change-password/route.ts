@@ -17,6 +17,9 @@ export const POST = route({ access: 'self', body: Body }, async ({ req, body, us
     ip,
     userAgent: req.headers.get('user-agent'),
   });
-  if (!result.ok) return json({ error: { code: result.reason, message: result.message } }, { status: 400 });
+  if (!result.ok) {
+    const status = result.reason === 'LOCKED' ? 429 : result.reason === 'BUSY' ? 503 : 400;
+    return json({ error: { code: result.reason, message: result.message } }, { status });
+  }
   return json({ ok: true }, { headers: { 'set-cookie': sessionCookie(result.token) } });
 });

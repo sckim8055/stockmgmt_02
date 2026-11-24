@@ -1,5 +1,6 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
+import { env } from '@/lib/env';
 
 // @node-rs/argon2 의 기본 알고리즘은 Argon2id 다. 비용 값은 OWASP 권장 최소치 이상으로 둔다.
 const ARGON_OPTIONS = { memoryCost: 19_456, timeCost: 2, parallelism: 1 } as const;
@@ -7,22 +8,51 @@ const ARGON_OPTIONS = { memoryCost: 19_456, timeCost: 2, parallelism: 1 } as con
 export const PASSWORD_MIN = 10;
 export const PASSWORD_MAX = 128;
 
-export function hashPassword(password: string): Promise<string> {
-  return hash(password, ARGON_OPTIONS);
+/** 해시 계산 대기열이 가득 찼다. 호출자는 "잠시 후 다시 시도"로 응답한다. */
+export class BusyError extends Error {
+  constructor() {
+    super('비밀번호 처리 대기열이 가득 찼습니다.');
+  }
 }
 
-export async function verifyPassword(passwordHash: string, password: string): Promise<boolean> {
-  try {
-    return await verify(passwordHash, password);
-  } catch {
-    return false;
+// argon2 는 일부러 무겁다. 로그인 요청이 몰려도 서버가 멈추지 않도록 동시에 계산하는 수를 제한하고,
+// 대기열이 길어지면 더 받지 않는다. (프로세스 단위 제한이다)
+const MAX_WAITING = 64;
+let active = 0;
+const waiting: Array<() => void> = [];
+
+async function limited<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= env.hashConcurrency) {
+    if (waiting.length >= MAX_WAITING) throw new BusyError();
+    await new Promise<void>((resolve) => waiting.push(resolve));
   }
+  active += 1;
+  try {
+    return await fn();
+  } finally {
+    active -= 1;
+    waiting.shift()?.();
+  }
+}
+
+export function hashPassword(password: string): Promise<string> {
+  return limited(() => hash(password, ARGON_OPTIONS));
+}
+
+export function verifyPassword(passwordHash: string, password: string): Promise<boolean> {
+  return limited(async () => {
+    try {
+      return await verify(passwordHash, password);
+    } catch {
+      return false; // 해시 형식이 깨진 경우
+    }
+  });
 }
 
 // 없는 계정으로 로그인할 때도 같은 시간이 걸리게 하려고 쓰는 가짜 해시.
 let dummyHash: Promise<string> | undefined;
 export async function burnVerify(password: string): Promise<void> {
-  dummyHash ??= hashPassword(randomBytes(16).toString('hex'));
+  dummyHash ??= hash(randomBytes(16).toString('hex'), ARGON_OPTIONS);
   await verifyPassword(await dummyHash, password);
 }
 

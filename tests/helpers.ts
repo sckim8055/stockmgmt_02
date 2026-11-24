@@ -2,7 +2,7 @@ import pg from 'pg';
 import { createCompany } from '@/lib/company/create';
 import { hashPassword } from '@/lib/auth/password';
 import { login } from '@/lib/auth/login';
-import { SESSION_COOKIE } from '@/lib/auth/session';
+import { sessionCookieName } from '@/lib/http/cookies';
 
 /** 테이블 소유자 연결. 테스트 준비와 검증에만 쓴다(RLS를 거치지 않는다). */
 let ownerClient: pg.Client | undefined;
@@ -17,6 +17,9 @@ export async function closeOwner(): Promise<void> {
   await ownerClient?.end();
   ownerClient = undefined;
 }
+
+/** 테스트에서 쓰는 앱 역할 이름 */
+export const APP_ROLE = process.env.APP_DB_ROLE ?? 'stock_app';
 
 let seq = 0;
 export function uniq(prefix: string): string {
@@ -64,7 +67,7 @@ export async function makeUser(
 export async function sessionFor(companyCode: string, loginId: string, password = GOOD_PASSWORD): Promise<string> {
   const r = await login({ companyCode, loginId, password });
   if (!r.ok) throw new Error(`테스트 로그인 실패: ${r.reason}`);
-  return `${SESSION_COOKIE}=${r.token}`;
+  return `${sessionCookieName()}=${r.token}`;
 }
 
 type Handler = (req: Request) => Promise<Response>;

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { closeOwner, owner } from './helpers';
+import { APP_ROLE, closeOwner, owner } from './helpers';
 
 afterAll(closeOwner);
 
@@ -42,11 +42,12 @@ describe('스키마', () => {
 
   it('앱 역할은 소유자·슈퍼유저가 아니고 RLS를 우회할 수 없다', async () => {
     const o = await owner();
-    const role = await o.query("SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = 'stock_app'");
+    const role = await o.query('SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = $1', [APP_ROLE]);
     expect(role.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false, rolcreaterole: false, rolcreatedb: false });
     const owned = await o.query(
       `SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'app' AND pg_get_userbyid(c.relowner) = 'stock_app'`,
+        WHERE n.nspname = 'app' AND pg_get_userbyid(c.relowner) = $1`,
+      [APP_ROLE],
     );
     expect(owned.rows[0].n).toBe(0);
   });
@@ -55,16 +56,16 @@ describe('스키마', () => {
     const o = await owner();
     for (const t of ['asset_txn', 'peripheral_txn', 'audit_log', 'mail_log']) {
       for (const priv of ['UPDATE', 'DELETE', 'TRUNCATE']) {
-        const r = await o.query('SELECT has_table_privilege($1, $2, $3) AS ok', ['stock_app', `app.${t}`, priv]);
+        const r = await o.query('SELECT has_table_privilege($1, $2, $3) AS ok', [APP_ROLE, `app.${t}`, priv]);
         expect(r.rows[0].ok, `${t} ${priv}`).toBe(false);
       }
     }
   });
 
-  it('기업·계정·자산·직원은 앱 역할이 삭제할 수 없다', async () => {
+  it('기업·계정·자산·직원·발송 작업은 앱 역할이 삭제할 수 없다', async () => {
     const o = await owner();
-    for (const t of ['company', 'app_user', 'asset', 'person']) {
-      const r = await o.query('SELECT has_table_privilege($1, $2, $3) AS ok', ['stock_app', `app.${t}`, 'DELETE']);
+    for (const t of ['company', 'app_user', 'asset', 'person', 'mail_job']) {
+      const r = await o.query('SELECT has_table_privilege($1, $2, $3) AS ok', [APP_ROLE, `app.${t}`, 'DELETE']);
       expect(r.rows[0].ok, t).toBe(false);
     }
   });

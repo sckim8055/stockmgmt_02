@@ -11,6 +11,14 @@ if (!url) {
   process.exit(1);
 }
 
+// 앱 역할 이름. 마이그레이션 파일에는 항상 stock_app 으로 적고, 실행할 때 이 이름으로 바꿔 넣는다.
+// 테스트는 다른 역할 이름을 써서, 같은 DB 서버에 있는 실제 앱 역할을 건드리지 않는다.
+const appRole = process.env.APP_DB_ROLE ?? 'stock_app';
+if (!/^[a-z_][a-z0-9_]{0,40}$/.test(appRole)) {
+  console.error('APP_DB_ROLE 형식이 올바르지 않습니다.');
+  process.exit(1);
+}
+
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'db', 'migrations');
 const client = new pg.Client({ connectionString: url });
 await client.connect();
@@ -30,7 +38,7 @@ try {
   let count = 0;
   for (const file of files) {
     if (applied.has(file)) continue;
-    const sql = await readFile(path.join(dir, file), 'utf8');
+    const sql = (await readFile(path.join(dir, file), 'utf8')).replaceAll('stock_app', appRole);
     await client.query('BEGIN');
     try {
       await client.query(sql);

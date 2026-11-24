@@ -20,7 +20,8 @@ export const SQL_IS_RECIPIENT =
   '     )) ';
 
 // payload.key 가 있으면 같은 사람에게 같은 열쇠의 알림은 한 번만 만들어진다.
-export const SQL_DEDUPE = " ON CONFLICT (user_id, (payload ->> 'key')) WHERE payload ? 'key' DO NOTHING";
+// dedupe_key 는 payload 의 key 를 저장해 둔 열이다(0009 마이그레이션). 표현식으로 비교하면 RLS 때문에 인덱스를 쓰지 못한다.
+export const SQL_DEDUPE = ' ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING';
 
 const SQL_NOTIFY_ONE =
   'INSERT INTO app.notification (company_id, user_id, type, payload)' +

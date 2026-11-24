@@ -396,3 +396,42 @@ describe('주변기기 업로드', () => {
     expect((await one('SELECT count(*)::int AS n FROM app.item_model WHERE company_id = $1 AND name = $2', [A.id, m])).n).toBe(0);
   });
 });
+
+describe('검토에서 드러난, 테스트가 없던 보장', () => {
+  it('엑셀로 올린 재고도 한계 수량 판정을 일으킨다(판정은 업로드 끝에 한 번)', async () => {
+    const { POST: thresholdCreate } = await import('@/app/api/thresholds/route');
+    const o = await owner();
+    const model = uniq('ThrMouse');
+    await upload(importPeripherals as Handler, 'admin', xlsx([H.peripherals, ['마우스', 'Logi', model, null, 1]]));
+    const modelId = (await one('SELECT id FROM app.item_model WHERE company_id = $1 AND name = $2', [A.id, model])).id;
+    const created = await thresholdCreate(
+      new Request('http://app.test/api/thresholds', { method: 'POST', headers: { host: 'app.test', origin: 'http://app.test', cookie: cookie.admin!, 'content-type': 'application/json' }, body: JSON.stringify({ modelId, minQty: 5 }) }),
+    );
+    const thresholdId = (await created.json()).thresholdId as string;
+    expect((await one('SELECT state FROM app.stock_threshold WHERE id = $1', [thresholdId])).state).toBe('LOW');
+    // 미리보기는 상태를 바꾸지 않는다.
+    await upload(importPeripherals as Handler, 'admin', xlsx([H.peripherals, ['마우스', 'Logi', model, null, 3], ['마우스', 'Logi', model, null, 3]]), 'preview');
+    expect((await one('SELECT state FROM app.stock_threshold WHERE id = $1', [thresholdId])).state).toBe('LOW');
+    await upload(importPeripherals as Handler, 'admin', xlsx([H.peripherals, ['마우스', 'Logi', model, null, 3], ['마우스', 'Logi', model, null, 3]]));
+    expect((await one('SELECT state FROM app.stock_threshold WHERE id = $1', [thresholdId])).state).toBe('OK');
+    const types = (await o.query("SELECT type FROM app.notification WHERE payload ->> 'thresholdId' = $1 ORDER BY created_at, id", [thresholdId])).rows.map((r) => r.type);
+    expect([...new Set(types)]).toEqual(['LOW_STOCK', 'STOCK_RECOVERED']);
+  });
+
+  it('시리얼 번호 중복 검사는 대소문자를 구분하지 않고, 서식만 있는 빈 행과 셀 안 줄바꿈이 있는 위치를 받는다', async () => {
+    const sn = uniq('SNX');
+    expect((await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(uniq('IA-'), { 4: sn })]))).data.committed).toBe(true);
+    const dup = await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(uniq('IA-'), { 4: sn.toLowerCase() })]));
+    expect(dup.status).toBe(422);
+    const tag = uniq('IA-');
+    expect((await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(tag, { 6: '본관 3층\n301호' })]))).data.committed).toBe(true);
+    expect((await one('SELECT location FROM app.asset WHERE company_id = $1 AND asset_tag = $2', [A.id, tag])).location).toBe('본관 3층\n301호');
+    // 값이 없는 행 5,000개가 뒤따라도 자료 행만 센다.
+    const col = (i: number) => String.fromCharCode(65 + i);
+    const header = `<row r="1">${H.persons.map((h, c) => `<c r="${col(c)}1" t="inlineStr"><is><t>${h}</t></is></c>`).join('')}</row>`;
+    const data = `<row r="2"><c r="B2" t="inlineStr"><is><t>FormattedRows</t></is></c></row>`;
+    const empty = Array.from({ length: 5000 }, (_, i) => `<row r="${i + 3}"><c r="A${i + 3}" s="1" /></row>`).join('');
+    const file = zipSync({ 'xl/worksheets/sheet1.xml': strToU8(`<worksheet><sheetData>${header}${data}${empty}</sheetData></worksheet>`) });
+    expect((await upload(importPersons as Handler, 'admin', file, 'preview')).data).toMatchObject({ totalRows: 1, errors: [] });
+  });
+});

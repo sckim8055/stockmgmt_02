@@ -219,3 +219,29 @@ describe('자기 화면 언어', () => {
     expect((await call(mePatch as Handler, { method: 'PATCH', cookie: cookie.viewer, body: { lang: 'en' }, headers: { origin: 'http://evil.test' } })).status).toBe(403);
   });
 });
+
+describe('검토에서 드러난, 테스트가 없던 보장', () => {
+  it('대시보드: 카테고리별 수치와 대여 수치도 부서 범위를 따른다', async () => {
+    // IT 에 주변기기 대여를 하나 더 만든다(HR 범위 사용자의 수치에 들어가면 안 된다).
+    const o = await owner();
+    const itStock = (await o.query('SELECT s.id FROM app.peripheral_stock s WHERE s.company_id = $1 AND s.department_id = $2', [A.id, id.it])).rows[0].id;
+    await post(issueRoute, 'admin', { action: 'LOAN', stockId: itStock, personId: id.lee, qty: 1 });
+    const hr = (await get(dashboardRoute, 'hrmanager')).data;
+    expect(hr.loans).toEqual({ open: 1, overdue: 1 });
+    expect(hr.assets.byCategory).toEqual([expect.objectContaining({ name: 'Laptop', total: 1 })]);
+    expect((await get(dashboardRoute, 'admin')).data.loans.open).toBe(2);
+  });
+
+  it('이력 검색의 %, _ 는 글자 그대로 찾고, 끝 날짜는 그날을 포함한다', async () => {
+    const list = async (qs: string) => (await get(stockHistoryRoute, 'admin', `/api/history/stock?pageSize=200&${qs}`)).data.items as unknown[];
+    expect(await list('q=%25')).toEqual([]);
+    expect(await list('q=_')).toEqual([]);
+    const today = (await get(dashboardRoute, 'admin')).data.today as string; // 기업 시간대의 오늘
+    expect((await list(`from=${today}&to=${today}`)).length).toBeGreaterThan(5);
+    // 감사 로그의 행위 조건에서 _ 는 "아무 글자"가 아니다.
+    const audit = async (qs: string) => (await get(auditRoute, 'admin', `/api/history/audit?pageSize=200&${qs}`)).data.items as { action: string }[];
+    expect((await audit('action=THRESHOLD_')).length).toBe(2);
+    expect(await audit('action=THRESHOL_')).toEqual([]);
+    expect((await audit(`from=${today}&to=${today}`)).length).toBeGreaterThan(3);
+  });
+});

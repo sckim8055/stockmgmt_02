@@ -21,7 +21,7 @@ import { createDepartment } from '@/lib/master/departments';
 import { createModel } from '@/lib/master/models';
 import { createPerson } from '@/lib/master/persons';
 import { MAX_QTY, receiveStock } from '@/lib/peripherals/peripherals';
-import { EMAIL_RE, hasControl, isIsoDate } from '@/lib/validation';
+import { EMAIL_RE, hasControl, hasNul, isIsoDate } from '@/lib/validation';
 import { serialToIsoDate, type Cell } from './xlsx';
 
 export type ImportKind = 'persons' | 'assets' | 'peripherals';
@@ -32,6 +32,8 @@ interface Column {
   required?: boolean;
   type: 'text' | 'date' | 'number' | 'integer';
   max?: number;
+  /** 줄바꿈을 받는 자유 입력 칸 */
+  multiline?: boolean;
   /** 화면 API 와 같은 형식 규칙 */
   pattern?: { re: RegExp; message: string };
   hint: string;
@@ -51,7 +53,7 @@ export const IMPORT_COLUMNS: Record<ImportKind, Column[]> = {
     { key: 'model', header: '모델명', required: true, type: 'text', max: 100, hint: '필수. 예: ThinkPad X1' },
     { key: 'serialNumber', header: '시리얼번호', type: 'text', max: 100, hint: '같은 모델 안에서 고유합니다.' },
     { key: 'department', header: '관리부서', type: 'text', max: 80, hint: '비우면 기본 부서(IT).' },
-    { key: 'location', header: '위치', type: 'text', max: 200, hint: '자유 입력' },
+    { key: 'location', header: '위치', type: 'text', max: 200, multiline: true, hint: '자유 입력' },
     { key: 'holderEmployeeNo', header: '보유자사번', type: 'text', max: 40, hint: '적으면 그 직원에게 배정된 상태로 등록합니다. 직원을 먼저 올려야 합니다.' },
     { key: 'purchaseDate', header: '구매일', type: 'date', hint: 'YYYY-MM-DD' },
     { key: 'purchasePrice', header: '구매가', type: 'number', hint: '숫자만. 입력 권한이 있어야 합니다.' },
@@ -133,7 +135,8 @@ function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[]): { row
         const text = (typeof raw === 'number' ? String(raw) : typeof raw === 'boolean' ? (raw ? 'TRUE' : 'FALSE') : raw).trim();
         // 15자리를 넘는 숫자는 엑셀이 저장할 때 이미 값이 바뀌어 있다. 엉뚱한 사번·태그로 들어가지 않게 거부한다.
         if (typeof raw === 'number' && (text.includes('e') || !Number.isSafeInteger(Math.trunc(raw)))) fail(`${col.header}: 숫자가 너무 큽니다. 셀 서식을 "텍스트"로 바꾼 뒤 다시 입력하세요.`);
-        else if (hasControl(text)) fail(`${col.header}: 줄바꿈이나 제어 문자는 쓸 수 없습니다.`);
+        // 이름·코드류는 한 줄이어야 한다. 자유 입력 칸(위치)은 화면 API 와 같이 줄바꿈을 받는다.
+        else if (col.multiline ? hasNul(text) || /[\u0001-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text) : hasControl(text)) fail(`${col.header}: 줄바꿈이나 제어 문자는 쓸 수 없습니다.`);
         else if (col.max && text.length > col.max) fail(`${col.header}: 너무 깁니다. (최대 ${col.max}자)`);
         else if (col.pattern && !col.pattern.re.test(text)) fail(`${col.header}: ${col.pattern.message}`);
         values[col.key] = text;
@@ -254,7 +257,7 @@ async function importRow(db: Db, actor: Actor, access: DataAccess, master: Maste
   let holderId: string | null = null;
   const holderNo = text(v.holderEmployeeNo);
   if (holderNo) {
-    const person = await db.query<{ id: string }>('SELECT id FROM app.person WHERE company_id = $1 AND lower(employee_no) = lower($2)', [actor.companyId, holderNo]);
+    const person = await db.query<{ id: string }>('SELECT id FROM app.person WHERE company_id = $1 AND employee_no_key = lower($2)', [actor.companyId, holderNo]);
     holderId = person.rows[0]?.id ?? null;
     if (!holderId) throw new HttpError(400, 'BAD_REQUEST', `보유자사번: 등록되지 않은 사번입니다 (${holderNo}). 직원을 먼저 올려 주세요.`);
   }

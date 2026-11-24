@@ -46,6 +46,11 @@ async function readUpload(req: Request): Promise<Uint8Array> {
   return bytes;
 }
 
+// 동시에 받고 있는 업로드 본문 수의 상한. 본문은 다 받을 때까지 메모리에 쌓이므로(건당 최대 5MB, 30초),
+// 상한이 없으면 여러 요청이 본문을 조금씩 보내며 메모리를 붙잡을 수 있다. 넘으면 본문을 읽기 전에 거절한다.
+const MAX_INFLIGHT_UPLOADS = 2;
+let inflightUploads = 0;
+
 // 한 프로세스에서 동시에 처리하는 업로드 수. 업로드는 파일을 푸는 동안 다른 요청을 멈추게 하고(동기 처리),
 // 처리하는 동안 DB 연결 하나를 오래 잡는다. 여러 건이 겹쳐 서비스 전체가 느려지지 않도록 하나씩만 받는다.
 const MAX_CONCURRENT_IMPORTS = 1;
@@ -56,7 +61,14 @@ export async function handleImport(kind: ImportKind, req: Request, actor: Actor,
   const mode = new URL(req.url).searchParams.get('mode') ?? 'preview';
   if (mode !== 'preview' && mode !== 'commit') throw badRequest('mode 는 preview 또는 commit 이어야 합니다.');
   // 파일은 자리를 잡기 전에 다 받는다. 받는 동안에는 자리를 차지하지 않는다(느린 전송으로 다른 기업의 업로드를 막지 못하게).
-  const bytes = await readUpload(req);
+  if (inflightUploads >= MAX_INFLIGHT_UPLOADS) throw new HttpError(429, 'IMPORT_BUSY', '업로드 요청이 몰려 있습니다. 잠시 후 다시 시도하세요.');
+  inflightUploads++;
+  let bytes: Uint8Array;
+  try {
+    bytes = await readUpload(req);
+  } finally {
+    inflightUploads--;
+  }
   if (runningImports >= MAX_CONCURRENT_IMPORTS) throw new HttpError(429, 'IMPORT_BUSY', '다른 업로드가 처리 중입니다. 잠시 후 다시 시도하세요.');
   runningImports++;
   try {

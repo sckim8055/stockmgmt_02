@@ -12,7 +12,7 @@ const Query = z.object({
   q: str().max(100).optional(),
   from: isoDate().optional(),
   to: isoDate().optional(),
-  page: z.coerce.number().int().min(1).max(500).optional(),
+  page: z.coerce.number().int().min(1).max(100).optional(),
   pageSize: z.coerce.number().int().min(1).max(200).optional(),
 });
 

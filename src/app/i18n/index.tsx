@@ -16,7 +16,7 @@
  *  1. 이 브라우저에서 사용자가 고른 언어(localStorage, 쓸 수 없으면 이 탭의 메모리)
  *  2. 로그인한 사용자의 언어(/api/me 의 lang) — AppShell 이 adoptUserLang() 으로 알려 준다
  *  3. 한국어
- *  고른 언어는 서버에 저장하지 않는다(자기 언어를 바꾸는 API 가 없다). `<html lang>` 은 현재 언어로 맞춘다.
+ *  로그인한 상태에서 언어를 바꾸면 계정에도 저장한다(PATCH /api/me, 셸이 호출한다). `<html lang>` 은 현재 언어로 맞춘다.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 

@@ -92,7 +92,8 @@ async function assertActiveDepartment(db: Db, actor: Actor, departmentId: string
 
 async function assertEmployeeNoFree(db: Db, actor: Actor, employeeNo: string, exceptId: string | null): Promise<void> {
   const { rowCount } = await db.query(
-    'SELECT 1 FROM app.person WHERE company_id = $1 AND lower(employee_no) = lower($2) AND ($3::uuid IS NULL OR id <> $3)',
+    // employee_no_key = 소문자로 저장해 둔 사번(0009). lower(열) 로 비교하면 RLS 때문에 인덱스를 쓰지 못한다.
+    'SELECT 1 FROM app.person WHERE company_id = $1 AND employee_no_key = lower($2) AND ($3::uuid IS NULL OR id <> $3)',
     [actor.companyId, employeeNo, exceptId],
   );
   // 퇴사자의 사번과 겹쳐도 같은 응답이다. 사번은 재사용하지 않는다.

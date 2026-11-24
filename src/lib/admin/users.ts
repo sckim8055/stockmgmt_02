@@ -236,7 +236,10 @@ export async function updateUser(db: Db, actor: Actor, targetId: string, input: 
     }
   }
 
-  const before = { roles: [...(await roleIdsOf(db, target.id))], scope: await userScope(db, target.id), userType: target.user_type };
+  // 이메일은 정기 메일이 나가는 주소다. 바뀌면 전후 값을 감사 로그에 남긴다(기업 밖 주소로 바꾸는 것을 추적할 수 있게).
+  const oldEmail = input.email === undefined ? undefined : ((await db.query<{ email: string | null }>('SELECT email FROM app.app_user WHERE id = $1 AND company_id = $2', [target.id, actor.companyId])).rows[0]?.email ?? null);
+  const emailChanged = input.email !== undefined && (input.email || null) !== oldEmail;
+  const before = { roles: [...(await roleIdsOf(db, target.id))], scope: await userScope(db, target.id), userType: target.user_type, ...(emailChanged ? { email: oldEmail } : {}) };
   await assertGrantable(db, actor, input.roleIds, input.departmentIds);
 
   await db.query(
@@ -261,7 +264,7 @@ export async function updateUser(db: Db, actor: Actor, targetId: string, input: 
     resource: 'admin.user',
     targetId: target.id,
     before,
-    after: { userType: newType, roleIds: input.roleIds, departmentIds: input.departmentIds, displayName: input.displayName },
+    after: { userType: newType, roleIds: input.roleIds, departmentIds: input.departmentIds, displayName: input.displayName, ...(emailChanged ? { email: input.email || null } : {}) },
     ip,
   });
 }

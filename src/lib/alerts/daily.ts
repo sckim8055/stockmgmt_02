@@ -32,7 +32,10 @@ const SQL_INSERT_FOR_ITEMS_TAIL =
   SQL_IS_RECIPIENT +
   SQL_DEDUPE;
 // 이미 알린 건(누구에게든)은 뺀다. k = 그 건의 열쇠.
-const SQL_NOT_ALERTED_HEAD = " AND NOT EXISTS (SELECT 1 FROM app.notification n WHERE n.company_id = $1 AND n.payload ? 'key' AND (n.payload ->> 'key') = ";
+// LIMIT 1 을 둔 스칼라 부질의로 쓴다: NOT EXISTS 로 쓰면 PostgreSQL 이 기업의 알림 전체를 읽어 해시하는 계획을 고른다.
+// 이렇게 쓰면 후보 건마다 (company_id, dedupe_key) 인덱스를 한 번씩만 찾는다.
+const SQL_NOT_ALERTED_HEAD = ' AND (SELECT 1 FROM app.notification n WHERE n.company_id = $1 AND n.dedupe_key = ';
+const SQL_NOT_ALERTED_TAIL = ' LIMIT 1) IS NULL';
 
 // $5 = 며칠 앞까지, $6 = 최대 건수
 const SQL_DAILY_WARRANTY =
@@ -42,7 +45,7 @@ const SQL_DAILY_WARRANTY =
   ' FROM app.asset a JOIN app.item_model m ON m.id = a.model_id AND m.company_id = a.company_id' +
   " WHERE a.company_id = $1 AND a.state NOT IN ('RETIRED', 'VOID')" +
   '   AND a.warranty_end >= $4::date AND a.warranty_end <= $4::date + $5::int' +
-  SQL_NOT_ALERTED_HEAD + '$3 || a.id || chr(58) || a.warranty_end)' +
+  SQL_NOT_ALERTED_HEAD + '$3 || a.id || chr(58) || a.warranty_end' + SQL_NOT_ALERTED_TAIL +
   ' ORDER BY a.warranty_end, a.id LIMIT $6' +
   SQL_INSERT_FOR_ITEMS_TAIL;
 
@@ -51,7 +54,7 @@ const SQL_DAILY_ASSET_OVERDUE =
   'SELECT a.department_id, $3 || a.id || chr(58) || a.due_date AS key, a.id AS "assetId", a.asset_tag AS "assetTag", p.name AS holder, a.due_date::text AS "dueDate"' +
   ' FROM app.asset a LEFT JOIN app.person p ON p.id = a.holder_person_id AND p.company_id = a.company_id' +
   " WHERE a.company_id = $1 AND a.state = 'IN_USE' AND a.due_date < $4::date AND $5::int IS NOT NULL" +
-  SQL_NOT_ALERTED_HEAD + '$3 || a.id || chr(58) || a.due_date)' +
+  SQL_NOT_ALERTED_HEAD + '$3 || a.id || chr(58) || a.due_date' + SQL_NOT_ALERTED_TAIL +
   ' ORDER BY a.due_date, a.id LIMIT $6' +
   SQL_INSERT_FOR_ITEMS_TAIL;
 
@@ -64,7 +67,7 @@ const SQL_DAILY_LOAN_OVERDUE =
   ' JOIN app.item_model m ON m.id = s.model_id AND m.company_id = l.company_id' +
   ' JOIN app.person p ON p.id = l.person_id AND p.company_id = l.company_id' +
   " WHERE l.company_id = $1 AND l.status = 'OPEN' AND l.due_date < $4::date AND $5::int IS NOT NULL" +
-  SQL_NOT_ALERTED_HEAD + '$3 || l.id || chr(58) || l.due_date)' +
+  SQL_NOT_ALERTED_HEAD + '$3 || l.id || chr(58) || l.due_date' + SQL_NOT_ALERTED_TAIL +
   ' ORDER BY l.due_date, l.id LIMIT $6' +
   SQL_INSERT_FOR_ITEMS_TAIL;
 
@@ -85,7 +88,9 @@ const DAILY_ACTION = 'DAILY_ALERTS_RUN';
 // 오늘(기업 시간대) 남긴 실행 기록이 있는가. $3 은 찾아볼 기간(인덱스로 최근 것만 본다).
 const SQL_DAILY_DONE_TODAY =
   'SELECT 1 FROM app.audit_log a JOIN app.company c ON c.id = a.company_id' +
-  ' WHERE a.company_id = $1 AND a.action = $2 AND (a.created_at AT TIME ZONE c.timezone)::date = (now() AT TIME ZONE c.timezone)::date' +
+  // 행위 코드를 글자 그대로 적어야 그 행위만 담은 부분 인덱스(0009)를 쓴다. $2 는 같은 값을 확인용으로 받는다.
+  " WHERE a.company_id = $1 AND a.action = 'DAILY_ALERTS_RUN' AND a.action = $2" +
+  ' AND (a.created_at AT TIME ZONE c.timezone)::date = (now() AT TIME ZONE c.timezone)::date' +
   ' AND a.created_at > now() - $3::interval LIMIT 1';
 
 /** 오늘(기업 시간대) 아직 하지 않았으면 계산한다. 했거나 다른 요청이 하는 중이면 아무것도 하지 않는다. */

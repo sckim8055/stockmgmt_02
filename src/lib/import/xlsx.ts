@@ -226,6 +226,7 @@ function parseAttrs(attrs: string): Map<string, string> {
   let i = 0;
   while (i < n) {
     while (i < n && attrs.charCodeAt(i) <= 32) i++;
+    if (i >= n) break; // 마지막 속성 뒤의 공백(`<c r="A1" />`)
     const nameStart = i;
     while (i < n && attrs.charCodeAt(i) > 32 && attrs.charCodeAt(i) !== 61) i++;
     const name = attrs.slice(nameStart, i);
@@ -331,23 +332,30 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
     col = -1;
   };
 
+  // 행을 닫을 때 저장한다. 값이 하나도 없는 행(서식만 지정한 빈 행)은 세지도 저장하지도 않는다:
+  // 열 전체에 "텍스트" 서식을 주면 엑셀이 수천 행 아래까지 빈 칸을 적어 두기 때문이다.
+  // 한도는 값이 있는 행에만 건다. 파일이 적은 행 번호(r)도 값이 있는 행에서만 한도와 비교한다.
+  const storeRow = () => {
+    const filled = cells !== null && cells.some((c) => c !== null);
+    if (filled) {
+      const tooMany = () => new XlsxError(`행이 너무 많습니다. (한 번에 최대 ${XLSX_LIMITS.rows - 1}행)`);
+      if (++rowCount > XLSX_LIMITS.rows || rowIndex >= XLSX_LIMITS.rows) throw tooMany();
+      while (rows.length < rowIndex) rows.push([]);
+      rows[rowIndex] = cells as Cell[];
+    }
+    cells = null;
+  };
+
   scanXml(xml, {
     open(name, attrs, selfClosing) {
       if (name === 'row') {
-        // 한도는 실제로 읽은 행의 수로 센다(r 속성은 파일이 적은 값이라 믿지 않는다).
-        if (++rowCount > XLSX_LIMITS.rows) throw new XlsxError(`행이 너무 많습니다. (한 번에 최대 ${XLSX_LIMITS.rows - 1}행)`);
         const r = Number(parseAttrs(attrs).get('r'));
         rowIndex = Number.isInteger(r) && r >= 1 ? r - 1 : nextRow;
         if (rowIndex < nextRow) throw new XlsxError(`${rowIndex + 1}행: 행 번호가 겹치거나 순서가 맞지 않습니다.`);
-        if (rowIndex >= XLSX_LIMITS.rows) throw new XlsxError(`행이 너무 많습니다. (한 번에 최대 ${XLSX_LIMITS.rows - 1}행)`);
         nextRow = rowIndex + 1;
         cells = [];
         nextCol = 0;
-        if (selfClosing) {
-          while (rows.length < rowIndex) rows.push([]);
-          rows[rowIndex] = cells;
-          cells = null;
-        }
+        if (selfClosing) storeRow();
       } else if (name === 'c' && cells) {
         if (col >= 0) throw new XlsxError(NOT_XLSX); // 칸 안에 칸
         const a = parseAttrs(attrs);
@@ -373,11 +381,7 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
       if (name === 'v' || name === 't') capture = null;
       else if (name === 'rPh') phonetic = Math.max(0, phonetic - 1);
       else if (name === 'c') finishCell();
-      else if (name === 'row' && cells) {
-        while (rows.length < rowIndex) rows.push([]);
-        rows[rowIndex] = cells;
-        cells = null;
-      }
+      else if (name === 'row' && cells) storeRow();
     },
     text(xml, from, to, escaped) {
       if (capture === 'v' && value !== null && value.length <= XLSX_LIMITS.cellChars) value += textOf(xml, from, to, escaped);

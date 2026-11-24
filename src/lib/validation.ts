@@ -24,7 +24,9 @@ export const hasControl = (v: string): boolean => CONTROL.test(v);
  * 한 줄짜리 글(이름 등). 줄바꿈을 포함한 제어 문자를 모두 거부한다.
  * 이름은 메일 제목 같은 곳에 그대로 들어가므로, 줄바꿈이 섞이면 헤더를 끼워 넣는 데 쓰일 수 있다.
  */
-export const line = () => z.string().refine((v) => !CONTROL.test(v), '줄바꿈이나 제어 문자는 쓸 수 없습니다.');
+export const line = () =>
+  // 앞뒤 공백(붙여 넣을 때 따라오는 탭·줄바꿈 포함)은 먼저 잘라 낸 뒤에 검사한다.
+  z.string().trim().refine((v) => !CONTROL.test(v), '줄바꿈이나 제어 문자는 쓸 수 없습니다.');
 
 /** 이메일 주소. 메일 헤더에서 뜻을 갖는 문자(< > , ; : " ( ) \\)와 공백·제어 문자를 받지 않는다. */
 export const EMAIL_RE = /^[^\s@<>(),;:"\\\u0000-\u001f\u007f]+@[^\s@<>(),;:"\\\u0000-\u001f\u007f]+\.[^\s@<>(),;:"\\\u0000-\u001f\u007f]+$/;

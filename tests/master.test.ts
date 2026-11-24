@@ -560,7 +560,8 @@ describe('직원', () => {
 
     await postId(personDeactivate, 'admin', p);
     expect((await postId(personAnonymize, 'viewer', p)).status).toBe(403);
-    expect((await postId(personAnonymize, 'oper', p)).status).toBe(200); // master.person:update
+    expect((await postId(personAnonymize, 'oper', p)).status).toBe(403); // 수정 권한만으로는 안 된다(되돌릴 수 없는 작업)
+    expect((await postId(personAnonymize, 'manager', p)).status).toBe(200); // master.person:deactivate
     const row = await one('SELECT name, employee_no, email, department_id, is_active, anonymized_at FROM app.person WHERE id = $1', [p]);
     expect(row).toMatchObject({ name: `퇴사자-${p.slice(0, 8)}`, employee_no: null, email: null, department_id: id.hr, is_active: false });
     expect(row!.anonymized_at).not.toBeNull();

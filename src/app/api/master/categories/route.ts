@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { str } from '@/lib/validation';
 import { createCategory, listCategories } from '@/lib/master/categories';
 import { badRequest, json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
@@ -10,9 +11,9 @@ const Query = z.object({
 
 const Body = z.strictObject({
   kind: z.enum(['ASSET', 'PERIPHERAL']),
-  name: z.string().trim().min(1).max(80),
-  nameKo: z.string().trim().max(80).nullish(),
-  nameZh: z.string().trim().max(80).nullish(),
+  name: str().trim().min(1).max(80),
+  nameKo: str().trim().max(80).nullish(),
+  nameZh: str().trim().max(80).nullish(),
   sortOrder: z.number().int().min(-100000).max(100000).optional(),
 });
 

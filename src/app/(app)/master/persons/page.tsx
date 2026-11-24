@@ -47,7 +47,7 @@ const T = {
     '자산을 반납·회수하고 대여를 정리한 뒤 다시 시도하세요.',
   anonymizeTitle: '직원 익명화 — 되돌릴 수 없음',
   anonymizeWarn1: (n: string) => `"${n}" 직원의 이름·사번·이메일을 영구히 지웁니다.`,
-  anonymizeWarn2: '이름은 "퇴사자-(ID 앞 8자리)"로 바뀌고, 자산 이력과 화면 어디에서도 원래 이름을 다시 볼 수 없습니다.',
+  anonymizeWarn2: '이름은 "퇴사자-(ID 앞 8자리)"로 바뀝니다. 단, 자산의 위치나 이력 메모에 직접 적어 넣은 이름은 지워지지 않습니다.',
   anonymizeWarn3: '이 작업은 되돌릴 수 없고, 익명화된 직원은 수정하거나 다시 재직 처리할 수 없습니다.',
   anonymizeType: `계속하려면 아래 칸에 "${ANONYMIZE_WORD}"라고 입력하세요.`,
   anonymizeConfirm: '영구히 익명화',
@@ -235,7 +235,7 @@ function PersonsInner() {
                       {!p.is_active && can('master.person', 'activate') ? (
                         <Button small onClick={() => setPending({ kind: 'activate', person: p })}>{T.activate}</Button>
                       ) : null}
-                      {!p.is_active && can('master.person', 'update') ? (
+                      {!p.is_active && can('master.person', 'deactivate') ? (
                         <Button small variant="danger" onClick={() => setPending({ kind: 'anonymize', person: p })}>{T.anonymize}</Button>
                       ) : null}
                     </div>

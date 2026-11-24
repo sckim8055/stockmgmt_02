@@ -10,7 +10,7 @@ import { HttpError } from '@/lib/http/errors';
  * 기준 정보 변경은 빈도가 낮아 직렬화해도 부담이 없다.
  */
 export async function lockMasterData(db: Db, companyId: string): Promise<void> {
-  await db.query('SELECT pg_advisory_xact_lock(727003, hashtext($1))', [companyId]);
+  await db.query('SELECT pg_advisory_xact_lock(727004, hashtext($1))', [companyId]);
 }
 
 export const conflict = (code: string, message: string) => new HttpError(409, code, message);

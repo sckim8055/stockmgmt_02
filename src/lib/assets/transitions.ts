@@ -113,6 +113,9 @@ export function applyAction(current: AssetSnapshot, action: AssetAction, input: 
 
     case 'RETIRE':
       if (s.state === 'IN_USE') no('사용 중인 자산은 먼저 반납 처리해야 합니다.');
+      // 사용 중에 수리 보낸 자산(보유자 유지)도 같다. 수리 완료 후 반납받고 퇴역시킨다.
+      // 분실 자산은 반납받을 수 없으므로 보유자가 있어도 퇴역(손실 처리)할 수 있다. 이력에 마지막 보유자가 남는다.
+      if (s.state === 'MAINTENANCE' && s.holderPersonId) no('보유자가 있는 자산입니다. 수리 완료 후 반납 처리한 다음 퇴역시키세요.');
       if (s.state !== 'IN_STOCK' && s.state !== 'MAINTENANCE' && s.state !== 'MISSING') no('이 상태에서는 퇴역 처리할 수 없습니다.');
       return { state: 'RETIRED', substate: 'PENDING_DISPOSAL', holderPersonId: null, dueDate: null };
 

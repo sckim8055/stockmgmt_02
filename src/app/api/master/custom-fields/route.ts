@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { str } from '@/lib/validation';
 import { createCustomField, listCustomFields } from '@/lib/master/custom-fields';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Body = z.strictObject({
-  key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/, '영문 소문자로 시작하고 영문 소문자·숫자·밑줄만, 40자 이내'),
-  label: z.string().trim().min(1).max(80),
+  key: str().regex(/^[a-z][a-z0-9_]{0,39}$/, '영문 소문자로 시작하고 영문 소문자·숫자·밑줄만, 40자 이내'),
+  label: str().trim().min(1).max(80),
   dataType: z.enum(['text', 'number', 'date', 'boolean']),
   isRestricted: z.boolean().optional(),
   sortOrder: z.number().int().min(-100000).max(100000).optional(),

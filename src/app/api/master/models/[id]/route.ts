@@ -1,12 +1,13 @@
 import { z } from 'zod';
+import { str } from '@/lib/validation';
 import { deleteModel, updateModel } from '@/lib/master/models';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Body = z.strictObject({
   categoryId: z.uuid().optional(),
-  manufacturer: z.string().trim().min(1).max(100).optional(),
-  name: z.string().trim().min(1).max(100).optional(),
+  manufacturer: str().trim().min(1).max(100).optional(),
+  name: str().trim().min(1).max(100).optional(),
 });
 
 export const PATCH = route(

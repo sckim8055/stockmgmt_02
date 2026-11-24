@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDate, str } from '@/lib/validation';
 import { actOnAsset } from '@/lib/assets/assets';
 import { loadDataAccess } from '@/lib/authz/scope';
 import { json } from '@/lib/http/errors';
@@ -8,11 +9,11 @@ import { route } from '@/lib/http/route';
 const Body = z.strictObject({
   action: z.enum(['MARK_MISSING', 'FOUND', 'RETIRE', 'DISPOSE', 'VOID']),
   holderPersonId: z.uuid().nullish(),
-  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식').nullish(),
+  dueDate: isoDate().nullish(),
   defective: z.boolean().optional(),
   disposal: z.enum(['DISPOSED', 'SOLD', 'DONATED']).optional(),
-  location: z.string().trim().max(200).nullable().optional(),
-  note: z.string().trim().max(500).nullish(),
+  location: str().trim().max(200).nullable().optional(),
+  note: str().trim().max(500).nullish(),
 });
 
 export const POST = route(

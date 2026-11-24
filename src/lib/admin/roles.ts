@@ -1,7 +1,9 @@
 // 역할 관리. 모든 함수는 tenant() 트랜잭션 안에서 호출한다.
 import type { Db } from '@/lib/db/context';
 import { writeAudit } from '@/lib/auth/audit';
-import { actorPermissions, lockCompanyAdministration, permKey, withinPermissions } from '@/lib/authz/grants';
+import {
+  actorPermissions, actorScope, assignedPermissions, lockCompanyAdministration, permKey, userScope, withinPermissions, withinScope,
+} from '@/lib/authz/grants';
 import { HttpError, badRequest, forbidden, notFound } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
 
@@ -84,7 +86,29 @@ async function loadEditable(db: Db, actor: Actor, roleId: string): Promise<{ id:
   if (!withinPermissions(acl, await actorPermissions(db, actor))) {
     throw forbidden('자신이 갖지 않은 권한이 포함된 역할은 수정할 수 없습니다.');
   }
+  await assertHoldersManageable(db, actor, role.id);
   return { ...role, acl };
+}
+
+/**
+ * 역할을 고치면 그 역할을 가진 모든 계정의 권한이 바뀐다. 그래서 계정 관리(users.ts 의 loadManageable)와 같은 기준을 적용한다:
+ * 자기보다 권한이 크거나 부서 범위가 넓은 계정이 쓰는 역할은 고치거나 끄거나 지울 수 없다.
+ * (이 검사가 없으면 범위가 HR 로 제한된 역할 관리자가, 전사 범위 계정이 쓰는 역할에 권한을 넣어 전사 범위로 행사하게 할 수 있다)
+ */
+async function assertHoldersManageable(db: Db, actor: Actor, roleId: string): Promise<void> {
+  if (actor.isAdmin) return;
+  const holders = await db.query<{ user_id: string }>(
+    'SELECT user_id FROM app.user_role WHERE role_id = $1 AND company_id = $2 AND user_id <> $3',
+    [roleId, actor.companyId, actor.userId],
+  );
+  if (!holders.rowCount) return;
+  const [mine, myScope] = [await actorPermissions(db, actor), await actorScope(db, actor)];
+  for (const { user_id } of holders.rows) {
+    const [theirs, theirScope] = [await assignedPermissions(db, user_id), await userScope(db, user_id)];
+    if (!withinPermissions(theirs, mine) || !withinScope(theirScope, myScope)) {
+      throw forbidden('자신보다 권한이나 범위가 큰 계정이 사용하는 역할은 수정할 수 없습니다.');
+    }
+  }
 }
 
 const duplicateName = () => new HttpError(409, 'DUPLICATE', '같은 이름의 역할이 이미 있습니다.');

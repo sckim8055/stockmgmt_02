@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { str } from '@/lib/validation';
 import { createModel, listModels } from '@/lib/master/models';
 import { badRequest, json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
@@ -6,15 +7,15 @@ import { route } from '@/lib/http/route';
 const Query = z.object({
   kind: z.enum(['ASSET', 'PERIPHERAL']).optional(),
   categoryId: z.uuid().optional(),
-  q: z.string().max(100).optional(),
+  q: str().max(100).optional(),
   includeInactive: z.enum(['true', 'false']).optional(),
 });
 
 // 종류(kind)는 받지 않는다. 항상 카테고리에서 복사한다.
 const Body = z.strictObject({
   categoryId: z.uuid(),
-  manufacturer: z.string().trim().min(1).max(100),
-  name: z.string().trim().min(1).max(100),
+  manufacturer: str().trim().min(1).max(100),
+  name: str().trim().min(1).max(100),
 });
 
 export const GET = route(

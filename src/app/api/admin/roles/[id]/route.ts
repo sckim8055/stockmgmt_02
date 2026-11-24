@@ -1,14 +1,15 @@
 import { z } from 'zod';
+import { str } from '@/lib/validation';
 import { deleteRole, updateRole } from '@/lib/admin/roles';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 const Body = z.object({
-  name: z.string().trim().min(1).max(80).optional(),
-  description: z.string().trim().max(300).nullable().optional(),
+  name: str().trim().min(1).max(80).optional(),
+  description: str().trim().max(300).nullable().optional(),
   isActive: z.boolean().optional(),
   acl: z
-    .array(z.object({ resource: z.string().min(1).max(80), operation: z.string().min(1).max(20) }))
+    .array(z.object({ resource: str().min(1).max(80), operation: str().min(1).max(20) }))
     .max(500)
     .optional(),
 });

@@ -1,23 +1,24 @@
 import { z } from 'zod';
+import { isoDate, str } from '@/lib/validation';
 import { getAsset, updateAsset } from '@/lib/assets/assets';
 import { loadDataAccess } from '@/lib/authz/scope';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식');
+const date = isoDate();
 
 // 상태와 보유자는 여기서 바꿀 수 없다(처리 API 전용). 정의하지 않은 키는 거부한다.
 const Body = z.strictObject({
   modelId: z.uuid().optional(),
-  assetTag: z.string().trim().min(1).max(64).optional(),
-  serialNumber: z.string().trim().max(100).nullable().optional(),
+  assetTag: str().trim().min(1).max(64).optional(),
+  serialNumber: str().trim().max(100).nullable().optional(),
   departmentId: z.uuid().optional(),
-  location: z.string().trim().max(200).nullable().optional(),
+  location: str().trim().max(200).nullable().optional(),
   purchaseDate: date.nullable().optional(),
   purchasePrice: z.number().min(0).max(999999999999).nullable().optional(),
-  supplier: z.string().trim().max(200).nullable().optional(),
+  supplier: str().trim().max(200).nullable().optional(),
   warrantyEnd: date.nullable().optional(),
-  custom: z.record(z.string(), z.unknown()).optional(),
+  custom: z.record(str(), z.unknown()).optional(),
 });
 
 export const GET = route(

@@ -7,7 +7,8 @@
 //    (비활성 필드는 자산 응답에서 빠지고 입력도 받지 않는다: src/lib/assets/assets.ts).
 import type { Db } from '@/lib/db/context';
 import { writeAudit } from '@/lib/auth/audit';
-import { badRequest, notFound } from '@/lib/http/errors';
+import { loadDataAccess } from '@/lib/authz/scope';
+import { badRequest, forbidden, notFound } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
 import { conflict, lockMasterData } from './common';
 
@@ -59,6 +60,12 @@ export async function createCustomField(db: Db, actor: Actor, input: CustomField
   await lockMasterData(db, actor.companyId);
   const dup = await db.query('SELECT 1 FROM app.custom_field_def WHERE company_id = $1 AND key = $2', [actor.companyId, input.key]);
   if (dup.rowCount) throw conflict('DUPLICATE', '같은 키의 사용자 지정 필드가 이미 있습니다.');
+  if (!(input.isRestricted ?? false)) {
+    // 예전에 같은 키로 저장된 값이 남아 있을 수 있다(삭제 검사와 자산 저장이 겹친 경우). 그 키가 제한 필드였을 수 있으므로
+    // 일반 필드로 다시 만들어 값을 드러내지 못하게 한다.
+    const leftover = await db.query('SELECT 1 FROM app.asset WHERE company_id = $1 AND custom ? $2 LIMIT 1', [actor.companyId, input.key]);
+    if (leftover.rowCount) throw conflict('IN_USE', '이 키로 저장된 값이 남아 있습니다. 제한 필드로 만들거나 다른 키를 쓰세요.');
+  }
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO app.custom_field_def (company_id, key, label, data_type, is_restricted, sort_order, is_active)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
@@ -89,6 +96,14 @@ export async function updateCustomField(db: Db, actor: Actor, fieldId: string, i
     throw badRequest('키와 데이터 형식은 만든 뒤에 바꿀 수 없습니다.');
   }
   const { key: _key, dataType: _dataType, ...changes } = input;
+  // 제한 여부를 바꾸면 그 필드의 값을 볼 수 있는 사람이 달라진다. 기준 정보 수정 권한만으로는 바꿀 수 없고,
+  // 제한 필드를 읽고 쓸 수 있는 사람(값을 이미 볼 수 있는 사람)만 바꾼다.
+  if (changes.isRestricted !== undefined && changes.isRestricted !== field.is_restricted) {
+    const access = await loadDataAccess(db, actor);
+    if (!access.canReadField('custom_restricted') || !access.canUpdateField('custom_restricted')) {
+      throw forbidden('제한 여부는 제한된 사용자 지정 필드의 조회·수정 권한이 있어야 바꿀 수 있습니다.');
+    }
+  }
   if (Object.values(changes).every((v) => v === undefined)) return;
   await db.query(
     `UPDATE app.custom_field_def

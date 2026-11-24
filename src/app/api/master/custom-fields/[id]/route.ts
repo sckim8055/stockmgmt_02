@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { str } from '@/lib/validation';
 import { deleteCustomField, updateCustomField } from '@/lib/master/custom-fields';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
 // key 와 dataType 은 바꿀 수 없다. 같은 값을 보내는 것만 허용하고, 다르면 400.
 const Body = z.strictObject({
-  key: z.string().max(40).optional(),
+  key: str().max(40).optional(),
   dataType: z.enum(['text', 'number', 'date', 'boolean']).optional(),
-  label: z.string().trim().min(1).max(80).optional(),
+  label: str().trim().min(1).max(80).optional(),
   isRestricted: z.boolean().optional(),
   sortOrder: z.number().int().min(-100000).max(100000).optional(),
   isActive: z.boolean().optional(),

@@ -7,6 +7,7 @@ import type { Db } from '@/lib/db/context';
 import { writeAudit } from '@/lib/auth/audit';
 import type { DataAccess } from '@/lib/authz/scope';
 import { HttpError, badRequest, forbidden, notFound } from '@/lib/http/errors';
+import { hasNul, isIsoDate } from '@/lib/validation';
 import type { Actor } from '@/lib/http/route';
 import { applyAction, TransitionError, type ActionInput, type AssetAction, type AssetState, type AssetSubstate } from './transitions';
 
@@ -193,7 +194,7 @@ export async function listAssetHistory(db: Db, actor: Actor, access: DataAccess,
 
 // ─────────────────────────── 입력 검증 ───────────────────────────
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_CUSTOM_KEYS = 100;
 
 /**
  * 사용자 지정 필드 입력을 검증한다. 정의에 없는 키, 형식이 맞지 않는 값, 권한 없는 제한 필드는 거부한다.
@@ -202,6 +203,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function validateCustom(input: Record<string, unknown>, defs: CustomDef[], access: DataAccess): Record<string, unknown> {
   const known = new Map(defs.map((d) => [d.key, d]));
   const out: Record<string, unknown> = {};
+  if (Object.keys(input).length > MAX_CUSTOM_KEYS) throw badRequest('사용자 지정 필드가 너무 많습니다.');
   for (const [key, value] of Object.entries(input)) {
     const def = known.get(key);
     if (!def) throw badRequest(`정의되지 않은 사용자 지정 필드입니다: ${key}`);
@@ -213,9 +215,9 @@ function validateCustom(input: Record<string, unknown>, defs: CustomDef[], acces
       continue;
     }
     const ok =
-      (def.data_type === 'text' && typeof value === 'string' && value.length <= 500) ||
+      (def.data_type === 'text' && typeof value === 'string' && value.length <= 500 && !hasNul(value)) ||
       (def.data_type === 'number' && typeof value === 'number' && Number.isFinite(value)) ||
-      (def.data_type === 'date' && typeof value === 'string' && DATE_RE.test(value)) ||
+      (def.data_type === 'date' && isIsoDate(value)) ||
       (def.data_type === 'boolean' && typeof value === 'boolean');
     if (!ok) throw badRequest(`사용자 지정 필드의 값 형식이 올바르지 않습니다: ${key}`);
     out[key] = value;
@@ -368,6 +370,8 @@ async function lockAsset(db: Db, actor: Actor, access: DataAccess, assetId: stri
 export async function updateAsset(db: Db, actor: Actor, access: DataAccess, assetId: string, input: UpdateAssetInput): Promise<void> {
   assertRestrictedWritable(access, input);
   const asset = await lockAsset(db, actor, access, assetId);
+  // 바꿀 내용이 없으면 이력·감사 기록도 남기지 않는다.
+  if (Object.values(input).every((v) => v === undefined)) return;
   if (asset.state === 'VOID') throw new HttpError(409, 'VOID', '등록 취소된 자산은 수정할 수 없습니다.');
 
   const departmentChanged = input.departmentId !== undefined && input.departmentId !== asset.department_id;
@@ -462,6 +466,14 @@ export async function actOnAsset(db: Db, actor: Actor, access: DataAccess, asset
   } catch (err) {
     if (err instanceof TransitionError) throw new HttpError(409, 'INVALID_TRANSITION', err.message);
     throw err;
+  }
+  if (action === 'VOID') {
+    // 등록 취소는 잘못 등록한 자산에만 쓴다. 배정·수리 등 한 번이라도 처리된 자산은 기록을 감추지 않도록 퇴역으로 끝낸다.
+    const used = await db.query(
+      "SELECT 1 FROM app.asset_txn WHERE asset_id = $1 AND company_id = $2 AND type <> ALL($3::text[]) LIMIT 1",
+      [asset.id, actor.companyId, ['REGISTER', 'RECEIVE', 'UPDATE', 'CHANGE_DEPARTMENT', 'IMPORT_UPDATE']],
+    );
+    if (used.rowCount) throw new HttpError(409, 'INVALID_TRANSITION', '이미 사용 이력이 있는 자산은 등록 취소할 수 없습니다. 퇴역으로 처리하세요.');
   }
   if ((action === 'ASSIGN' || action === 'LOAN') && next.holderPersonId) {
     // FOR SHARE: 퇴사 처리(직원 행을 FOR UPDATE 로 잠근다)와 줄을 세운다. 잠그지 않으면 "보유 자산 없음" 검사와

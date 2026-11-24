@@ -24,6 +24,10 @@ const T = {
   navRoles: '역할 관리',
   navCompanies: '기업 관리',
   navAssets: '자산',
+  navPeripheralGroup: '주변기기',
+  navPeripheralStock: '재고',
+  navPeripheralLoans: '대여 현황',
+  navImport: '엑셀 업로드',
   navMasterGroup: '기준 정보',
   navCategories: '카테고리',
   navModels: '모델',
@@ -259,6 +263,8 @@ function TopBar({
 interface NavItem {
   href: string;
   label: string;
+  /** 하위 경로에 다른 메뉴가 있으면(예: /peripherals 아래 /peripherals/loans) 정확히 같을 때만 선택 표시한다. */
+  exact?: boolean;
 }
 interface NavSection {
   /** 묶음 제목. 없으면 제목 없이 항목만 그린다. */
@@ -270,6 +276,13 @@ function SideNav({ me, can }: { me: Me; can: (resource: string, operation: strin
   const pathname = usePathname();
   const main: NavItem[] = [{ href: '/', label: T.navHome }];
   if (can('asset.item', 'read')) main.push({ href: '/assets', label: T.navAssets });
+  if (can('master.person', 'import') || can('asset.item', 'import') || can('peripheral.receive', 'execute')) {
+    main.push({ href: '/import', label: T.navImport });
+  }
+
+  const peripheral: NavItem[] = [];
+  if (can('peripheral.stock', 'read')) peripheral.push({ href: '/peripherals', label: T.navPeripheralStock, exact: true });
+  if (can('peripheral.loan', 'read')) peripheral.push({ href: '/peripherals/loans', label: T.navPeripheralLoans });
 
   const master: NavItem[] = [];
   if (can('master.category', 'read')) master.push({ href: '/master/categories', label: T.navCategories });
@@ -285,6 +298,7 @@ function SideNav({ me, can }: { me: Me; can: (resource: string, operation: strin
 
   const sections: NavSection[] = [
     { items: main },
+    { title: T.navPeripheralGroup, items: peripheral },
     { title: T.navMasterGroup, items: master },
     { title: T.navAdminGroup, items: admin },
   ].filter((sec) => sec.items.length > 0);
@@ -298,7 +312,7 @@ function SideNav({ me, can }: { me: Me; can: (resource: string, operation: strin
           ) : null}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={sec.title}>
             {sec.items.map((it) => {
-              const active = it.href === '/' ? pathname === '/' : pathname === it.href || pathname.startsWith(it.href + '/');
+              const active = it.href === '/' || it.exact ? pathname === it.href : pathname === it.href || pathname.startsWith(it.href + '/');
               return (
                 <li key={it.href}>
                   <Link

@@ -134,6 +134,77 @@ export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: s
   return { ok: false, status: res.status, error, redirected: false, raw };
 }
 
+// ── 파일 올리기·내려받기 ──
+// api() 와 같은 규칙(기업 확인 헤더, 401·비밀번호 변경 강제 이동, 오류 형식)을 따른다.
+
+function companyHeader(url: string): Record<string, string> {
+  return expectedCompany && !COMPANY_NEUTRAL.some((p) => url.startsWith(p)) ? { 'x-expected-company': expectedCompany } : {};
+}
+
+const NETWORK_FAILURE = { ok: false, status: 0, error: { code: 'NETWORK', message: '서버에 연결할 수 없습니다.' }, redirected: false } as const;
+
+async function readJson(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return null; // 본문 없음
+  }
+}
+
+/** 실패 응답을 api() 와 같은 형식으로 바꾼다. */
+function failure(status: number, raw: unknown): Extract<ApiResult<never>, { ok: false }> {
+  const error = readError(raw) ?? { code: 'HTTP_' + status, message: FALLBACK_ERROR };
+  if (status === 401) {
+    window.location.href = '/login';
+    return { ok: false, status, error, redirected: true };
+  }
+  if (status === 403 && error.code === 'PASSWORD_CHANGE_REQUIRED') {
+    window.location.href = '/change-password';
+    return { ok: false, status, error, redirected: true };
+  }
+  return { ok: false, status, error, redirected: false, raw };
+}
+
+/** 파일을 요청 본문 그대로(application/octet-stream) 보내고 JSON 응답을 받는다. */
+export async function apiUpload<T>(url: string, file: Blob): Promise<ApiResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', ...companyHeader(url) },
+      body: file,
+      cache: 'no-store',
+    });
+  } catch {
+    return NETWORK_FAILURE;
+  }
+  const raw = await readJson(res);
+  return res.ok ? { ok: true, status: res.status, data: raw as T } : failure(res.status, raw);
+}
+
+/** GET 응답(파일)을 받아 브라우저에 fileName 으로 저장한다. */
+export async function apiDownload(url: string, fileName: string): Promise<ApiResult<null>> {
+  let res: Response;
+  let blob: Blob;
+  try {
+    res = await fetch(url, { method: 'GET', headers: companyHeader(url), cache: 'no-store' });
+    if (!res.ok) return failure(res.status, await readJson(res));
+    blob = await res.blob();
+  } catch {
+    return NETWORK_FAILURE;
+  }
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // 클릭으로 저장이 시작된 뒤에 주소를 풀어 준다.
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
+  return { ok: true, status: res.status, data: null };
+}
+
 // ── 버튼 ──
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'link';
 

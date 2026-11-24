@@ -435,3 +435,53 @@ describe('검토에서 드러난, 테스트가 없던 보장', () => {
     expect((await upload(importPersons as Handler, 'admin', file, 'preview')).data).toMatchObject({ totalRows: 1, errors: [] });
   });
 });
+
+describe('6단계 검토에서 드러난, 테스트가 없던 보장', () => {
+  it('줄바꿈은 위치 칸에서만 받는다(이름·태그·모델 등은 거부). 위치도 다른 제어 문자는 거부한다', async () => {
+    const cases: [Partial<Record<number, string>>, boolean][] = [
+      [{ 6: '1층\n창고' }, true],
+      [{ 6: '1층\u0007창고' }, false],
+      [{ 3: 'X1\nPro' }, false], // 모델명
+      [{ 2: 'Len\rovo' }, false], // 제조사
+      [{ 4: 'SN\n1' }, false], // 시리얼
+      [{ 10: '공급\n업체' }, false], // 공급업체
+    ];
+    for (const [over, ok] of cases) {
+      const r = await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(uniq('IA-'), over)]), 'preview');
+      expect(r.data.errors.length === 0, JSON.stringify(over)).toBe(ok);
+    }
+    const person = await upload(importPersons as Handler, 'admin', xlsx([H.persons, [null, '홍\n길동', null, null]]), 'preview');
+    expect(person.data.errors.length).toBe(1);
+  });
+
+  it('보유자 사번은 대소문자를 구분하지 않고 찾는다', async () => {
+    const no = uniq('Hold');
+    await upload(importPersons as Handler, 'admin', xlsx([H.persons, [no, '보유자2', null, null]]));
+    const tag = uniq('IA-');
+    const r = await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(tag, { 7: no.toUpperCase() })]));
+    expect(r.data.committed).toBe(true);
+    expect((await one('SELECT state FROM app.asset WHERE company_id = $1 AND asset_tag = $2', [A.id, tag])).state).toBe('IN_USE');
+  });
+
+  it('같은 기업의 업로드를 받는 중이면 그 기업의 다른 업로드는 바로 거절하고, 끝나면(끊겨도) 다시 받는다', async () => {
+    let release!: () => void;
+    const slow = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0x50, 0x4b]));
+        release = () => controller.error(new Error('client aborted'));
+      },
+    });
+    const pending = (importAssets as Handler)(
+      new Request('http://app.test/api/import/x?mode=preview', {
+        method: 'POST', headers: { host: 'app.test', origin: 'http://app.test', cookie: cookie.admin! }, body: slow, duplex: 'half',
+      } as RequestInit),
+    );
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(uniq('IA-'))]), 'preview')).status).toBe(429);
+    // 다른 기업은 영향이 없다.
+    expect((await upload(importAssets as Handler, 'badmin', xlsx([H.assets, asset(uniq('IA-'))]), 'preview')).status).toBe(200);
+    release();
+    expect((await pending).status).toBeGreaterThanOrEqual(400);
+    expect((await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(uniq('IA-'))]), 'preview')).status).toBe(200);
+  });
+});

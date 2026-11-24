@@ -24,4 +24,4 @@ COPY --from=build /app/src ./src
 # 루트가 아닌 계정으로 실행한다.
 USER node
 EXPOSE 3000
-CMD ["npx", "next", "start", "-p", "3000", "-H", "0.0.0.0"]
+CMD ["node", "node_modules/next/dist/bin/next", "start", "-p", "3000", "-H", "0.0.0.0"]

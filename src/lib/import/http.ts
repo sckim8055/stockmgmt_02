@@ -7,6 +7,8 @@ import { readXlsx, writeXlsx, XLSX_LIMITS, XlsxError } from './xlsx';
 
 /** 본문을 다 받기까지 기다리는 시간. 일부러 천천히 보내는 요청이 자리를 오래 차지하지 못하게 한다. */
 const UPLOAD_DEADLINE_MS = 30_000;
+/** 자료가 이만큼 오지 않으면 끊는다(연결만 열어 두고 보내지 않는 요청). */
+const UPLOAD_STALL_MS = 5_000;
 
 /** 요청 본문(엑셀 파일 그대로)을 크기와 시간을 확인하며 읽는다. */
 async function readUpload(req: Request): Promise<Uint8Array> {
@@ -20,7 +22,7 @@ async function readUpload(req: Request): Promise<Uint8Array> {
   for (;;) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<'timeout'>((resolve) => {
-      timer = setTimeout(() => resolve('timeout'), Math.max(0, deadline - Date.now()));
+      timer = setTimeout(() => resolve('timeout'), Math.max(0, Math.min(UPLOAD_STALL_MS, deadline - Date.now())));
     });
     const next = await Promise.race([reader.read(), timeout]);
     clearTimeout(timer);
@@ -46,10 +48,14 @@ async function readUpload(req: Request): Promise<Uint8Array> {
   return bytes;
 }
 
-// 동시에 받고 있는 업로드 본문 수의 상한. 본문은 다 받을 때까지 메모리에 쌓이므로(건당 최대 5MB, 30초),
+// 동시에 받고 있는 업로드 본문 수의 상한. 본문은 다 받을 때까지 메모리에 쌓이므로(건당 최대 5MB),
 // 상한이 없으면 여러 요청이 본문을 조금씩 보내며 메모리를 붙잡을 수 있다. 넘으면 본문을 읽기 전에 거절한다.
-const MAX_INFLIGHT_UPLOADS = 2;
+//  - 기업마다 1건: 한 기업이 자리를 여러 개 차지해 다른 기업의 업로드를 막지 못한다.
+//  - 전체 8건: 메모리 상한(약 40MB).
+//  - 보내지 않고 연결만 열어 둔 요청은 UPLOAD_STALL_MS 뒤에 끊긴다.
+const MAX_INFLIGHT_UPLOADS = 8;
 let inflightUploads = 0;
+const inflightByCompany = new Set<string>();
 
 // 한 프로세스에서 동시에 처리하는 업로드 수. 업로드는 파일을 푸는 동안 다른 요청을 멈추게 하고(동기 처리),
 // 처리하는 동안 DB 연결 하나를 오래 잡는다. 여러 건이 겹쳐 서비스 전체가 느려지지 않도록 하나씩만 받는다.
@@ -61,13 +67,16 @@ export async function handleImport(kind: ImportKind, req: Request, actor: Actor,
   const mode = new URL(req.url).searchParams.get('mode') ?? 'preview';
   if (mode !== 'preview' && mode !== 'commit') throw badRequest('mode 는 preview 또는 commit 이어야 합니다.');
   // 파일은 자리를 잡기 전에 다 받는다. 받는 동안에는 자리를 차지하지 않는다(느린 전송으로 다른 기업의 업로드를 막지 못하게).
+  if (inflightByCompany.has(actor.companyId)) throw new HttpError(429, 'IMPORT_BUSY', '이 기업의 다른 업로드를 받고 있습니다. 잠시 후 다시 시도하세요.');
   if (inflightUploads >= MAX_INFLIGHT_UPLOADS) throw new HttpError(429, 'IMPORT_BUSY', '업로드 요청이 몰려 있습니다. 잠시 후 다시 시도하세요.');
   inflightUploads++;
+  inflightByCompany.add(actor.companyId);
   let bytes: Uint8Array;
   try {
     bytes = await readUpload(req);
   } finally {
     inflightUploads--;
+    inflightByCompany.delete(actor.companyId);
   }
   if (runningImports >= MAX_CONCURRENT_IMPORTS) throw new HttpError(429, 'IMPORT_BUSY', '다른 업로드가 처리 중입니다. 잠시 후 다시 시도하세요.');
   runningImports++;

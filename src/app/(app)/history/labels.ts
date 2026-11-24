@@ -40,6 +40,9 @@ export interface HistoryPage<T> {
   pageSize: number;
   hasMore: boolean;
   items: T[];
+  /** 재고 이력만: 조건이 걸려 "최근 scanWindow 건 안에서만" 찾은 결과인가 */
+  filtered?: boolean;
+  scanWindow?: number;
 }
 
 export interface AuditItem {

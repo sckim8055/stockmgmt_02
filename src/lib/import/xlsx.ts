@@ -23,7 +23,9 @@ export const XLSX_LIMITS = {
   /** 풀어낸 뒤의 크기 한도(실제로 나온 바이트 기준) */
   smallPartBytes: 1024 * 1024, // 통합 문서, 관계
   partBytes: 16 * 1024 * 1024, // 공유 문자열, 시트
-  rows: 2001, // 머리글 1행 + 자료 2000행
+  rows: 2001, // 머리글 1행 + 자료 2000행(값이 있는 행)
+  /** 빈 행까지 모두 센 행 요소 수의 상한. 열 전체에 서식을 준 파일(빈 행 수천 개)은 받되, 빈 행만으로 읽기 시간을 늘리지 못하게 한다. */
+  rowElements: 20000,
   columns: 40,
   cellChars: 1000,
   sharedStrings: 200_000,
@@ -288,6 +290,7 @@ function readSharedStrings(xml: string): string[] {
 function readSheet(xml: string, shared: string[]): Cell[][] {
   const rows: Cell[][] = [];
   let rowCount = 0;
+  let rowElements = 0;
   let nextRow = 0;
   let rowIndex = -1;
   let cells: Cell[] | null = null;
@@ -349,6 +352,7 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
   scanXml(xml, {
     open(name, attrs, selfClosing) {
       if (name === 'row') {
+        if (++rowElements > XLSX_LIMITS.rowElements) throw new XlsxError('행이 너무 많습니다. 자료가 없는 아래쪽 행을 지운 뒤 다시 저장해 주세요.');
         const r = Number(parseAttrs(attrs).get('r'));
         rowIndex = Number.isInteger(r) && r >= 1 ? r - 1 : nextRow;
         if (rowIndex < nextRow) throw new XlsxError(`${rowIndex + 1}행: 행 번호가 겹치거나 순서가 맞지 않습니다.`);

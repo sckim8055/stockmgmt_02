@@ -183,6 +183,7 @@ function StockHistoryInner() {
             ))}
           </Table>
           <Pager page={data.page} pageSize={data.pageSize} hasNext={data.hasMore} onPage={(p) => setParams({ page: String(p) }, true)} />
+          {data.filtered && data.scanWindow ? <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>{T.windowHint(F.num(data.scanWindow))}</p> : null}
         </>
       ) : null}
     </div>

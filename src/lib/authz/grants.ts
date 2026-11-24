@@ -6,6 +6,7 @@
 //   - 자기 부서 범위 밖으로 범위를 넓혀 줄 수 없다.
 // 기업 관리자와 시스템 관리자(Actor.isAdmin)는 기업 안에서 제한이 없다.
 import type { Db } from '@/lib/db/context';
+import { HttpError } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
 
 export const permKey = (resource: string, operation: string): string => `${resource}:${operation}`;
@@ -46,7 +47,29 @@ export async function assignedPermissions(db: Db, userId: string): Promise<Set<s
  * 계정·역할 관리는 빈도가 낮아 직렬화해도 부담이 없다.
  */
 export async function lockCompanyAdministration(db: Db, companyId: string): Promise<void> {
-  await db.query('SELECT pg_advisory_xact_lock(727002, hashtext($1))', [companyId]);
+  await acquireCompanyLock(db, 727002, companyId);
+}
+
+/** 기업 단위 잠금을 기다리는 최대 시간. */
+const COMPANY_LOCK_WAIT_MS = 2000;
+const COMPANY_LOCK_RETRY_MS = 100;
+
+/**
+ * 기업 단위 잠금(트랜잭션이 끝날 때까지 유지)을 잡는다. 오래 기다리지 않는다:
+ * 2초 안에 잡지 못하면 409(BUSY)로 끝낸다.
+ *
+ * 왜 기다리지 않는가: 기다리는 요청은 그동안 DB 연결을 하나씩 붙잡고 있다. 연결은 모든 기업이 함께 쓰므로,
+ * 한 기업의 엑셀 업로드(이 잠금을 10초쯤 잡는다)가 끝나기를 그 기업의 요청 여러 건이 기다리면
+ * 다른 기업의 요청까지 연결을 얻지 못해 실패한다.
+ */
+export async function acquireCompanyLock(db: Db, lockClass: number, companyId: string): Promise<void> {
+  const deadline = Date.now() + COMPANY_LOCK_WAIT_MS;
+  for (;;) {
+    const { rows } = await db.query<{ ok: boolean }>('SELECT pg_try_advisory_xact_lock($1::int, hashtext($2)) AS ok', [lockClass, companyId]);
+    if (rows[0]?.ok) return;
+    if (Date.now() >= deadline) throw new HttpError(409, 'BUSY', '이 기업의 다른 관리 작업(엑셀 업로드 등)이 처리 중입니다. 잠시 후 다시 시도하세요.');
+    await new Promise((resolve) => setTimeout(resolve, COMPANY_LOCK_RETRY_MS));
+  }
 }
 
 /** 계정의 부서 범위. null = 전체 부서. */

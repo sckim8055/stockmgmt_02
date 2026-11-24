@@ -25,12 +25,14 @@
 ```powershell
 cd F:\works\stockmgmt_02          # 저장소를 받은 폴더
 
-# 1) 비밀값 파일을 만든다. 메모장으로 열어 두 비밀번호를 직접 정해 넣는다(영문·숫자로 길게, @ : / ? # % 는 쓰지 않는다).
+# 1) 비밀값 파일을 만든다. 메모장으로 열어 두 비밀번호를 직접 정해 넣는다.
+#    영문 대소문자와 숫자로만 길게(24자 이상 권장). 기호는 쓰지 않는다($ 는 값이 바뀌고, @ : / ? # % 는 접속 주소를 깨뜨린다).
 Copy-Item deploy\.env.example deploy\.env
 notepad deploy\.env
 #    DB_OWNER_PASSWORD  DB 소유자 비밀번호
 #    DB_APP_PASSWORD    앱 전용 역할 비밀번호(16자 이상)
-#    이 PC 에서 http://localhost 로만 먼저 시험한다면 COOKIE_SECURE=false 로 둔다. HTTPS(터널)로 열면 true 로 바꾼다.
+#    COOKIE_SECURE 는 true(기본)로 둔다. 크롬·엣지는 http://localhost 에서도 로그인된다(확인함).
+#    파이어폭스·사파리에서 http://localhost 로 시험할 때 로그인이 유지되지 않으면 그때만 false 로 바꿔 시험하고, 터널(HTTPS)로 열기 전에 true 로 되돌린다.
 
 # 2) 이미지를 만들고 실행한다. 처음에는 몇 분 걸린다.
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
@@ -49,6 +51,16 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env exec app npx tsx sc
 
 `deploy/.env` 는 저장소에 올라가지 않는다(`.gitignore`). 비밀번호를 채팅·메일·문서에 붙여 넣지 않는다.
 
+주의할 점
+
+- **`DB_OWNER_PASSWORD` 는 처음 실행할 때 정한 값이 DB 에 고정된다.** 나중에 `.env` 의 값만 바꾸면 `migrate` 가 접속하지 못해 앱이 뜨지 않는다.
+  바꾸려면 DB 안에서 먼저 바꾼다: `docker compose ... exec db psql -U postgres -c "ALTER ROLE postgres PASSWORD '새값'"` 후 `.env` 를 맞춘다.
+  `DB_APP_PASSWORD` 는 `.env` 만 바꾸고 `up -d` 하면 된다(`migrate` 가 맞춰 준다. 앱도 함께 다시 뜬다).
+- **`docker compose down -v` 는 자료를 모두 지운다**(`-v` 가 볼륨을 지운다). 멈출 때는 `stop` 또는 `down`(‑v 없이).
+- **PC 를 다시 켜면 Docker Desktop 이 떠야 서비스가 다시 뜬다.** Docker Desktop 은 기본적으로 사용자가 윈도우에 로그인해야 시작된다.
+  설정에서 "로그인할 때 Docker Desktop 시작"을 켜고, 무인으로 돌릴 PC 라면 자동 로그인 또는 리눅스 서버(Docker Engine)를 쓴다.
+  예약한 백업도 Docker 가 떠 있어야 동작한다.
+
 ## 자료 넣기
 
 기업 관리자로 로그인해 "엑셀 업로드" 화면에서 양식을 내려받아 **직원 → 자산 → 주변기기** 순서로 올린다.
@@ -60,7 +72,8 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env exec app npx tsx sc
 powershell -ExecutionPolicy Bypass -File deploy\backup.ps1
 ```
 
-- `deploy\backups\stockmgmt-YYYYMMDD-HHMMSS.dump` 를 만들고, **그 파일을 임시 DB 에 복원해 보는 것까지** 한다. 복원되지 않는 백업이면 실패로 끝난다.
+- `deploy\backups\stockmgmt-YYYYMMDD-HHMMSS.dump` 를 만들고, **그 파일을 임시 DB 에 복원해 보는 것까지** 한다. 복원되지 않는 백업이면 실패로 끝나고 파일은 `.partial` 로 남는다(백업으로 세지 않는다).
+- 이 스크립트의 출력은 영어다(윈도우 PowerShell 이 한글이 든 스크립트를 잘못 읽는 경우가 있어 영문만 썼다). **윈도우에서 실행해 보지 못했다. 처음 실행할 때 결과를 확인한다.**
 - 최근 14개만 남긴다(`$env:KEEP` 로 바꿀 수 있다).
 - 매일 하려면 윈도우 "작업 스케줄러"에 위 명령을 등록한다(시작 위치: 저장소 폴더).
 - **백업 파일은 이 PC 밖(다른 디스크·클라우드 저장소)에도 복사해 둔다.** 같은 디스크에만 있으면 디스크가 고장 날 때 함께 사라진다.
@@ -69,11 +82,15 @@ powershell -ExecutionPolicy Bypass -File deploy\backup.ps1
 
 복원(자료를 백업 시점으로 되돌린다. **현재 자료는 사라진다**):
 
+**새 PC·새 볼륨에 복원할 때는 먼저 `up -d` 를 한 번 실행해 둔다.** `migrate` 가 앱 역할(`stock_app`)을 만들어야 복원이 끝까지 된다.
+앱 역할이 없는 DB 서버에 복원하면 중간에 실패해 격리 정책과 권한이 빠진 DB 가 남는다(그 상태로 쓰면 안 된다. 지우고 다시 한다).
+
 ```powershell
 $c = @('compose', '-f', 'deploy/compose.yaml', '--env-file', 'deploy/.env')
+docker @c up -d                 # 새 PC 라면: 구조와 앱 역할을 먼저 만든다
 docker @c stop app
 docker @c cp deploy\backups\stockmgmt-YYYYMMDD-HHMMSS.dump db:/tmp/restore.dump
-docker @c exec -T db dropdb -U postgres --if-exists stockmgmt
+docker @c exec -T db dropdb -U postgres --if-exists --force stockmgmt
 docker @c exec -T db createdb -U postgres stockmgmt
 docker @c exec -T db pg_restore -U postgres -d stockmgmt --no-owner --exit-on-error /tmp/restore.dump
 docker @c exec -T db rm -f /tmp/restore.dump
@@ -85,10 +102,13 @@ docker @c up -d          # migrate 가 다시 돌아 빠진 구조 변경과 역
 ```powershell
 powershell -ExecutionPolicy Bypass -File deploy\backup.ps1     # 먼저 백업
 git pull
-docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+docker compose -f deploy/compose.yaml --env-file deploy/.env build
+docker compose -f deploy/compose.yaml --env-file deploy/.env stop app     # 옛 판을 먼저 멈춘다
+docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
 ```
 
-`migrate` 가 새 구조 변경을 적용한 뒤에 `app` 이 새 판으로 뜬다. 구조 변경은 되돌리는 스크립트가 없다. 문제가 생기면 백업으로 복원한다.
+옛 판을 멈춘 뒤에 `migrate` 가 새 구조 변경을 적용하고 `app` 이 새 판으로 뜬다(그동안 접속이 끊긴다. 보통 1분 안쪽).
+옛 판을 켜 둔 채 구조를 바꾸면, 바뀐 구조에 맞지 않는 옛 코드가 오류를 낸다. 구조 변경은 되돌리는 스크립트가 없다. 문제가 생기면 백업으로 복원한다.
 
 ## 운영 설정
 
@@ -99,6 +119,8 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
   (계정 기준 잠금은 그대로 동작한다). 터널·프록시 없이 직접 열어 둔 상태에서는 설정하지 않는다(접속자가 헤더를 꾸밀 수 있다).
 - **쿠키** `COOKIE_SECURE=true`(기본): HTTPS 에서만 로그인 쿠키가 전달된다. 터널이 HTTPS 를 제공하므로 운영에서는 true.
 - 상태 확인용 주소는 따로 없다. 로그인 화면(`/login`)이 열리는지로 확인한다(compose 의 healthcheck 도 그렇게 한다).
+  **이 확인은 DB 접속까지는 보지 않는다.** 앱이 healthy 인데 로그인이 안 되면 `docker compose ... logs app` 에서 DB 접속 오류를 본다.
+- 로그는 컨테이너마다 10MB × 5개까지만 남는다.
 
 ## 아직 없는 것
 

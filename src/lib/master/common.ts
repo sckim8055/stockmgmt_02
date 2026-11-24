@@ -1,5 +1,6 @@
 // 기준 정보(카테고리·모델·부서·직원·사용자 지정 필드)가 함께 쓰는 도구. 모든 함수는 tenant() 트랜잭션 안에서 호출한다.
 import type { Db } from '@/lib/db/context';
+import { acquireCompanyLock } from '@/lib/authz/grants';
 import { HttpError } from '@/lib/http/errors';
 
 /**
@@ -10,7 +11,8 @@ import { HttpError } from '@/lib/http/errors';
  * 기준 정보 변경은 빈도가 낮아 직렬화해도 부담이 없다.
  */
 export async function lockMasterData(db: Db, companyId: string): Promise<void> {
-  await db.query('SELECT pg_advisory_xact_lock(727004, hashtext($1))', [companyId]);
+  // 오래 기다리지 않는다(2초 뒤 409). 이유는 acquireCompanyLock 의 설명.
+  await acquireCompanyLock(db, 727004, companyId);
 }
 
 export const conflict = (code: string, message: string) => new HttpError(409, code, message);

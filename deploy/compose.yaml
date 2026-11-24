@@ -14,6 +14,7 @@ services:
   db:
     image: postgres:16
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "5" } }
     environment:
       POSTGRES_DB: stockmgmt
       POSTGRES_USER: postgres
@@ -40,6 +41,8 @@ services:
   app:
     build: { context: .., dockerfile: Dockerfile }
     restart: unless-stopped
+    init: true   # 종료 신호를 앱에 제대로 전달하고 남은 프로세스를 거둔다
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "5" } }
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }

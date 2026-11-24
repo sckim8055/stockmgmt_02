@@ -37,7 +37,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[ "$ROLE" != "stock_app" ] && [ "$DB" != "stock_test" ] || { echo refuse; exit 1; }
+# 이 스크립트는 DB 와 역할을 만들고 지운다. 이 PC 의 DB 서버에만 쓴다(운영 서버를 가리키면 실행하지 않는다).
+HOSTPORT=${ADMIN_BASE##*@}
+case "${HOSTPORT%%:*}" in 127.0.0.1|localhost|"[::1]") ;; *) echo "E2E_ADMIN_URL 은 이 PC(127.0.0.1/localhost)의 DB 서버여야 합니다: ${HOSTPORT%%:*}" >&2; trap - EXIT; exit 1 ;; esac
 set -e
 psql "$ADMIN_URL" -qc "DROP DATABASE IF EXISTS $DB WITH (FORCE)"
 psql "$ADMIN_URL" -qc "CREATE DATABASE $DB"
@@ -49,7 +51,8 @@ export OPERATOR_CODE=OPERATOR COOKIE_SECURE=false
 SMOKE_SEED=$(npx tsx "$SRC/seed.ts"); export SMOKE_SEED
 echo "seeded"
 
-setsid npx next start -p $PORT > "$DIR/server.log" 2>&1 < /dev/null &
+# 서버에는 앱 역할의 접속 주소만 넘긴다(소유자 주소와 시험용 비밀번호는 넘기지 않는다).
+setsid env -u OWNER_URL -u SMOKE_PW -u SMOKE_SEED npx next start -p $PORT > "$DIR/server.log" 2>&1 < /dev/null &
 SERVER_PID=$!
 SERVER_PGID=$(ps -o pgid= -p $SERVER_PID | tr -d ' ')
 for i in $(seq 1 60); do curl -sf -o /dev/null "$SMOKE_BASE/login" && break; sleep 1; done

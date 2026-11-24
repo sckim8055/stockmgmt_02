@@ -35,6 +35,14 @@ const T = {
   navPersons: '직원',
   navCustomFields: '사용자 지정 필드',
   navAdminGroup: '관리',
+  navAlertGroup: '알림',
+  navAlertInbox: '알림함',
+  navThresholds: '한계 수량',
+  navMailGroup: '메일',
+  navMailSchedules: '메일 일정',
+  navMailLogs: '발송 기록',
+  unreadBadge: (n: number) => (n > 99 ? '99+' : String(n)),
+  unreadLabel: (n: number) => `읽지 않은 알림 ${n}건`,
   navLabel: '주 메뉴',
   pickCompany: '상단 바에서 작업할 기업을 먼저 선택하세요.',
 };
@@ -79,6 +87,8 @@ interface ShellValue {
   /** 시스템 관리자일 때만 채워진다. */
   companies: Company[];
   reloadCompanies: () => Promise<void>;
+  /** 알림함 화면이 방금 받은 읽지 않은 알림 수로 메뉴의 표시를 맞춘다(따로 다시 묻지 않는다). */
+  syncUnread: (count: number) => void;
 }
 
 const ShellContext = createContext<ShellValue | null>(null);
@@ -97,6 +107,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [companyError, setCompanyError] = useState('');
   // 기업을 바꾸면 이 값을 올려 아래 화면을 새로 그린다(각 화면이 데이터를 다시 불러온다).
   const [generation, setGeneration] = useState(0);
+  // 읽지 않은 알림 수. null = 모름(권한 없음·불러오기 전·실패). 주기적으로 묻지 않는다:
+  // 화면을 처음 열 때와 기업을 바꿀 때만 부른다. 알림함 화면은 자기가 받은 건수로 맞춘다(syncUnread).
+  const [unread, setUnread] = useState<number | null>(null);
 
   const loadCompanies = useCallback(async () => {
     const r = await api<{ companies: Company[] }>('GET', '/api/system/companies');
@@ -128,6 +141,22 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (me.userType === 'SYSTEM_ADMIN') await loadCompanies();
   }, [loadCompanies]);
 
+  const loadUnread = useCallback(async () => {
+    // pageSize=1: 건수만 필요하다(알림 내용은 알림함 화면이 불러온다).
+    const r = await api<{ unread: number }>('GET', '/api/alerts?pageSize=1&light=true');
+    setUnread(r.ok ? r.data.unread : null);
+  }, []);
+
+  // 알림함 조회 권한이 있고 기업이 정해진 경우에만 부른다. 기업이 바뀌면(state 가 새로 바뀌면) 다시 부른다.
+  const unreadEnabled =
+    state.kind === 'ready' &&
+    (state.perms.all || state.perms.permissions.includes('alert.inbox:read')) &&
+    Boolean(state.me.companyId ?? state.me.actingCompanyId);
+  useEffect(() => {
+    if (unreadEnabled) void loadUnread();
+    else setUnread(null);
+  }, [unreadEnabled, state, loadUnread]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -156,6 +185,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     effectiveCompanyId: me.companyId ?? me.actingCompanyId,
     companies,
     reloadCompanies: loadCompanies,
+    syncUnread: setUnread,
   };
 
   const onCompanyChanged = async () => {
@@ -168,7 +198,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <TopBar me={me} companies={companies} companyError={companyError} onCompanyChanged={onCompanyChanged} />
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-          <SideNav me={me} can={can} />
+          <SideNav me={me} can={can} unread={unread} />
           <main key={generation} style={{ flex: 1, padding: '20px 24px', minWidth: 0 }}>
             {children}
           </main>
@@ -260,11 +290,16 @@ function TopBar({
   );
 }
 
+/** 화면에는 보이지 않고 화면 낭독기만 읽는 글자 */
+const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' } as const;
+
 interface NavItem {
   href: string;
   label: string;
   /** 하위 경로에 다른 메뉴가 있으면(예: /peripherals 아래 /peripherals/loans) 정확히 같을 때만 선택 표시한다. */
   exact?: boolean;
+  /** 항목 옆에 붙이는 건수 표시 */
+  count?: number | null;
 }
 interface NavSection {
   /** 묶음 제목. 없으면 제목 없이 항목만 그린다. */
@@ -272,7 +307,7 @@ interface NavSection {
   items: NavItem[];
 }
 
-function SideNav({ me, can }: { me: Me; can: (resource: string, operation: string) => boolean }) {
+function SideNav({ me, can, unread }: { me: Me; can: (resource: string, operation: string) => boolean; unread: number | null }) {
   const pathname = usePathname();
   const main: NavItem[] = [{ href: '/', label: T.navHome }];
   if (can('asset.item', 'read')) main.push({ href: '/assets', label: T.navAssets });
@@ -291,6 +326,14 @@ function SideNav({ me, can }: { me: Me; can: (resource: string, operation: strin
   if (can('master.person', 'read')) master.push({ href: '/master/persons', label: T.navPersons });
   if (can('master.custom_field', 'read')) master.push({ href: '/master/custom-fields', label: T.navCustomFields });
 
+  const alert: NavItem[] = [];
+  if (can('alert.inbox', 'read')) alert.push({ href: '/alerts', label: T.navAlertInbox, count: unread });
+  if (can('threshold', 'read')) alert.push({ href: '/thresholds', label: T.navThresholds });
+
+  const mail: NavItem[] = [];
+  if (can('mail.schedule', 'read')) mail.push({ href: '/mail/schedules', label: T.navMailSchedules });
+  if (can('mail.log', 'read')) mail.push({ href: '/mail/logs', label: T.navMailLogs });
+
   const admin: NavItem[] = [];
   if (can('admin.user', 'read')) admin.push({ href: '/admin/users', label: T.navUsers });
   if (can('admin.role', 'read')) admin.push({ href: '/admin/roles', label: T.navRoles });
@@ -299,6 +342,8 @@ function SideNav({ me, can }: { me: Me; can: (resource: string, operation: strin
   const sections: NavSection[] = [
     { items: main },
     { title: T.navPeripheralGroup, items: peripheral },
+    { title: T.navAlertGroup, items: alert },
+    { title: T.navMailGroup, items: mail },
     { title: T.navMasterGroup, items: master },
     { title: T.navAdminGroup, items: admin },
   ].filter((sec) => sec.items.length > 0);
@@ -325,6 +370,17 @@ function SideNav({ me, can }: { me: Me; can: (resource: string, operation: strin
                     }}
                   >
                     {it.label}
+                    {it.count ? (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          style={{ marginLeft: 6, display: 'inline-block', minWidth: 18, padding: '0 6px', borderRadius: 9, background: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 600, lineHeight: '18px', textAlign: 'center' }}
+                        >
+                          {T.unreadBadge(it.count)}
+                        </span>
+                        <span style={srOnly}>{` (${T.unreadLabel(it.count)})`}</span>
+                      </>
+                    ) : null}
                   </Link>
                 </li>
               );

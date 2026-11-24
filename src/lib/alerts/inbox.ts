@@ -11,11 +11,20 @@ const SQL_INBOX_PAGE =
   ' WHERE company_id = $1 AND user_id = $2 AND (NOT $3::boolean OR read_at IS NULL)' +
   ' ORDER BY created_at DESC, id DESC LIMIT $4 OFFSET $5';
 
-export async function listAlerts(db: Db, actor: Actor, query: { unreadOnly?: boolean; page?: number; pageSize?: number }) {
+// 메뉴의 읽지 않은 수 표시(badge)는 화면을 열 때마다 요청된다. 그때마다 날짜 기준 알림을 다시 계산하지 않도록,
+// 그런 가벼운 요청에서는 기업마다 10분에 한 번만 계산한다(프로세스 안의 기억이라 재시작하면 다시 계산한다. 계산은 몇 번 해도 결과가 같다).
+const LIGHT_INTERVAL_MS = 10 * 60 * 1000;
+const lastDailyRun = new Map<string, number>();
+
+export async function listAlerts(db: Db, actor: Actor, query: { unreadOnly?: boolean; page?: number; pageSize?: number; light?: boolean }) {
   const pageSize = Math.min(Math.max(query.pageSize ?? 30, 1), 100);
   const page = Math.max(query.page ?? 1, 1);
   // 날짜 기준 알림(보증 만료, 연체)은 알림함의 첫 쪽을 열 때 계산한다(이미 알린 건은 다시 만들어지지 않는다).
-  if (page === 1) await runDailyAlerts(db, actor.companyId);
+  const last = lastDailyRun.get(actor.companyId) ?? 0;
+  if (page === 1 && (!query.light || Date.now() - last > LIGHT_INTERVAL_MS)) {
+    await runDailyAlerts(db, actor.companyId);
+    lastDailyRun.set(actor.companyId, Date.now());
+  }
   const filters = [actor.companyId, actor.userId, query.unreadOnly ?? false];
   const counts = await db.query<{ total: number; unread: number }>(SQL_INBOX_COUNTS, filters);
   const rows = await db.query(SQL_INBOX_PAGE, [...filters, pageSize, (page - 1) * pageSize]);

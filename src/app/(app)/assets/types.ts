@@ -105,6 +105,6 @@ export interface PersonOption {
  * (assets.ts 는 DB·감사 로그 모듈을 import 하므로 화면에서 직접 가져올 수 없다)
  */
 export const SORT_KEYS = [
-  'asset_tag', 'state', 'model', 'department', 'holder', 'warranty_end', 'purchase_date', 'updated_at', 'purchase_price',
+  'asset_tag', 'state', 'model', 'department', 'holder', 'warranty_end', 'purchase_date', 'due_date', 'updated_at', 'purchase_price',
 ] as const;
 export type SortKey = (typeof SORT_KEYS)[number];

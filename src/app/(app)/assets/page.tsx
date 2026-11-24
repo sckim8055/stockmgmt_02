@@ -25,6 +25,8 @@ const T = {
   filterDept: '관리 부서',
   filterHolder: '보유자',
   includeVoid: '등록 취소 포함',
+  overdueOnly: '연체만',
+  overdueOnlyHint: '사용 중이면서 반납 기한이 지난 자산만 봅니다.',
   all: '전체',
   inactive: '(사용 안 함)',
   reset: '조건 초기화',
@@ -51,7 +53,7 @@ const T = {
 };
 
 /** URL 에서 읽어 API 로 그대로 넘기는 조건. holderName 은 화면 표시용이라 넘기지 않는다. */
-const API_KEYS = ['q', 'state', 'substate', 'categoryId', 'modelId', 'departmentId', 'holderPersonId', 'includeVoid', 'sort', 'order', 'page'] as const;
+const API_KEYS = ['q', 'state', 'substate', 'categoryId', 'modelId', 'departmentId', 'holderPersonId', 'includeVoid', 'overdue', 'sort', 'order', 'page'] as const;
 
 export default function AssetsPage() {
   return (
@@ -151,7 +153,7 @@ function AssetsInner() {
 
   const head: ReactNode[] = [
     sortHead('asset_tag', T.colTag), sortHead('model', T.colModel), T.colCategory, T.colSerial, sortHead('state', T.colState),
-    sortHead('holder', T.colHolder), sortHead('department', T.colDept), T.colLocation, T.colDue,
+    sortHead('holder', T.colHolder), sortHead('department', T.colDept), T.colLocation, sortHead('due_date', T.colDue),
   ];
   if (showPrice) head.push(sortHead('purchase_price', T.colPrice));
   if (showSupplier) head.push(T.colSupplier);
@@ -239,6 +241,10 @@ function AssetsInner() {
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', paddingBottom: 8 }}>
           <input type="checkbox" checked={get('includeVoid') === 'true'} onChange={(e) => setParams({ includeVoid: e.target.checked ? 'true' : null })} />
           {T.includeVoid}
+        </label>
+        <label title={T.overdueOnlyHint} style={{ display: 'flex', gap: 6, alignItems: 'center', paddingBottom: 8 }}>
+          <input type="checkbox" checked={get('overdue') === 'true'} onChange={(e) => setParams({ overdue: e.target.checked ? 'true' : null })} />
+          {T.overdueOnly}
         </label>
         {spKey ? (
           <div style={{ paddingBottom: 4 }}>

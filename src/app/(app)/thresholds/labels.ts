@@ -1,0 +1,48 @@
+// 한계 수량 화면의 응답 형식과 표시 이름. 서버(src/lib/alerts/thresholds.ts)가 정한 컬럼을 그대로 옮겼다.
+// (그 파일은 DB·감사 로그 모듈을 import 하므로 화면에서 직접 가져올 수 없다)
+
+export type ItemKind = 'ASSET' | 'PERIPHERAL';
+export type ThresholdState = 'OK' | 'LOW';
+
+export interface ThresholdRow {
+  id: string;
+  category_id: string | null;
+  model_id: string | null;
+  /** null = 기업 전체 */
+  department_id: string | null;
+  min_qty: number;
+  warn_ratio: number;
+  state: ThresholdState;
+  is_active: boolean;
+  last_alert_at: string | null;
+  /** 현재 사용 가능 수량(자산은 재고·사용 가능 대수, 주변기기는 보유 수량의 합) */
+  qty: number;
+  target_name: string;
+  kind: ItemKind;
+  department_name: string | null;
+}
+
+/** 서버의 한계 수량·여유 비율 범위와 같다(src/app/api/thresholds/route.ts). */
+export const MAX_MIN_QTY = 1_000_000;
+export const MIN_RATIO = 1;
+export const MAX_RATIO = 10;
+
+export const KIND_LABEL: Record<ItemKind, string> = {
+  ASSET: '자산',
+  PERIPHERAL: '주변기기',
+};
+export const KIND_TONE: Record<ItemKind, 'blue' | 'amber'> = {
+  ASSET: 'blue',
+  PERIPHERAL: 'amber',
+};
+
+export const TARGET_TYPE_LABEL = {
+  category: '카테고리',
+  model: '모델',
+} as const;
+export type TargetType = keyof typeof TARGET_TYPE_LABEL;
+
+/** 부족 알림 뒤 정상으로 돌아오는 수량. 서버의 판정(Math.ceil(min_qty × warn_ratio))과 같은 식이다. */
+export const recoverAt = (t: { min_qty: number; warn_ratio: number }) => Math.ceil(t.min_qty * t.warn_ratio);
+
+export const fmtRatio = (r: number) => r.toLocaleString('ko-KR', { maximumFractionDigits: 2 });

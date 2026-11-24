@@ -1,0 +1,34 @@
+{
+  "name": "stockmgmt_02",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:set-app-password": "node scripts/set-app-password.mjs",
+    "admin:create-system": "tsx scripts/create-system-admin.ts",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.2.2",
+    "next": "^16.4.6",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.1"
+  }
+}

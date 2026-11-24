@@ -2,11 +2,13 @@
 import { useState, type FormEvent } from 'react';
 import { useT } from '../i18n';
 import { LangSwitcher } from '../i18n/switcher';
-import { button, card, ErrorText, Field, input, postJson } from '../ui';
+import { authButtonClass, authCardClass, authInputClass, ErrorText, Field, postJson } from '../ui';
 import { TEXT } from './page.text';
+import { TEXT as SHELL_TEXT } from '../shell.text';
 
 export default function LoginPage() {
   const T = useT(TEXT);
+  const S = useT(SHELL_TEXT);
   const [companyCode, setCompanyCode] = useState('');
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
@@ -27,23 +29,27 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={card}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+    <main className={authCardClass}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+        <span className="brand">
+          <span className="brand__mark" aria-hidden="true" />
+          <span className="brand__name">{S.product}</span>
+        </span>
         <LangSwitcher />
       </div>
-      <h1 style={{ fontSize: 20, marginTop: 0 }}>{T.title}</h1>
+      <h1>{T.title}</h1>
       <form onSubmit={submit}>
         <Field label={T.companyCode}>
-          <input style={input} value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} autoComplete="organization" required />
+          <input className={authInputClass} value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} autoComplete="organization" required />
         </Field>
         <Field label={T.loginId}>
-          <input style={input} value={loginId} onChange={(e) => setLoginId(e.target.value)} autoComplete="username" required />
+          <input className={authInputClass} value={loginId} onChange={(e) => setLoginId(e.target.value)} autoComplete="username" required />
         </Field>
         <Field label={T.password}>
-          <input style={input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+          <input className={authInputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         </Field>
         <ErrorText>{error}</ErrorText>
-        <button style={button} disabled={busy}>{busy ? T.checking : T.submit}</button>
+        <button className={authButtonClass} disabled={busy}>{busy ? T.checking : T.submit}</button>
       </form>
     </main>
   );

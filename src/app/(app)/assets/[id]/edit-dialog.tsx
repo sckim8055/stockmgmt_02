@@ -102,7 +102,7 @@ export function EditAssetDialog({
   return (
     <Modal title={T.title(asset.asset_tag)} onClose={onClose} width={560}>
       <form onSubmit={submit}>
-        <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 10px' }}>{T.stateNote}</p>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>{T.stateNote}</p>
         {modelOptions.length > 0 ? (
           <LabeledField label={T.fModel}>
             {(id) => <FilterableSelect id={id} options={modelOptions} value={modelId} onChange={setModelId} required />}
@@ -147,9 +147,9 @@ export function EditAssetDialog({
           </LabeledField>
         ) : null}
         {defs.length > 0 ? (
-          <fieldset style={{ border: '1px solid #e2e5ea', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
-            <legend style={{ fontSize: 13, color: '#4b5563', padding: '0 4px' }}>{T.customTitle}</legend>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>{T.customHint}</div>
+          <fieldset style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
+            <legend style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 4px' }}>{T.customTitle}</legend>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{T.customHint}</div>
             <CustomFieldInputs defs={defs} draft={draft} onChange={setCustom} />
           </fieldset>
         ) : null}

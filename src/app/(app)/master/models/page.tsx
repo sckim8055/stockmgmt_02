@@ -136,9 +136,9 @@ function ModelsInner() {
           {T.includeInactive}
         </label>
       </form>
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{loadError}</ErrorText>
-      {rows === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {rows === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {rows ? (
         <Table head={[T.colManufacturer, T.colName, T.colCategory, T.colKind, T.colStatus, T.colActions]}>
           {rows.length === 0 ? <EmptyRow colSpan={6}>{T.empty}</EmptyRow> : null}
@@ -148,7 +148,7 @@ function ModelsInner() {
               <td style={td}>{m.name}</td>
               <td style={td}>
                 {m.category_name}
-                {m.category_is_active ? null : <span style={{ color: '#6b7280', fontSize: 12 }}> {T.categoryInactive}</span>}
+                {m.category_is_active ? null : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> {T.categoryInactive}</span>}
               </td>
               <td style={td}><Badge tone={m.kind === 'ASSET' ? 'blue' : 'amber'}>{T.kind[m.kind]}</Badge></td>
               <td style={td}>{m.is_active ? <Badge tone="green">{T.active}</Badge> : <Badge tone="gray">{T.inactive}</Badge>}</td>

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useId, useState, type ReactNode } from 'react';
 import { api, Button, ErrorText, useUserTypeLabel, type UserType, setExpectedCompany } from './ui';
-import { useLangControl } from './i18n';
+import { useLangControl, type Lang } from './i18n';
 import { LangSwitcher } from './i18n/switcher';
 import { useT } from './i18n';
 import { TEXT } from './shell.text';
@@ -129,7 +129,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [load]);
 
   if (state.kind === 'loading') {
-    return <p style={{ padding: 24, color: '#6b7280' }}>{T.loading}</p>;
+    return <p style={{ padding: 24, color: 'var(--text-muted)' }}>{T.loading}</p>;
   }
   if (state.kind === 'error') {
     return (
@@ -162,16 +162,93 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <ShellContext.Provider value={value}>
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <TopBar me={me} companies={companies} companyError={companyError} onCompanyChanged={onCompanyChanged} />
-        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-          <SideNav me={me} can={can} unread={unread} />
-          <main key={generation} style={{ flex: 1, padding: '20px 24px', minWidth: 0 }}>
-            {children}
-          </main>
-        </div>
-      </div>
+      <ShellFrame me={me} can={can} unread={unread} companies={companies} companyError={companyError} onCompanyChanged={onCompanyChanged}>
+        <main key={generation} className="shell__content">
+          {children}
+        </main>
+      </ShellFrame>
     </ShellContext.Provider>
+  );
+}
+
+/**
+ * 사이드바(넓은 화면) / 서랍 메뉴(좁은 화면)와 상단 바의 배치.
+ * 서랍은 화면 모양만 바꾼다: 메뉴 항목과 권한 판정은 SideNav 그대로다.
+ */
+function ShellFrame({
+  me,
+  can,
+  unread,
+  companies,
+  companyError,
+  onCompanyChanged,
+  children,
+}: {
+  me: Me;
+  can: (resource: string, operation: string) => boolean;
+  unread: number | null;
+  companies: Company[];
+  companyError: string;
+  onCompanyChanged: () => Promise<void>;
+  children: ReactNode;
+}) {
+  const T = useT(TEXT);
+  const pathname = usePathname();
+  const navId = useId();
+  const [open, setOpen] = useState(false);
+
+  // 메뉴에서 화면을 고르면 서랍을 닫는다.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // 서랍이 열려 있을 때 Esc 로 닫는다. 열면 첫 메뉴 항목으로 초점을 옮긴다(좁은 화면에서만 서랍이 된다).
+  useEffect(() => {
+    if (!open) return;
+    document.getElementById(navId)?.querySelector<HTMLElement>('a[href]')?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, navId]);
+
+  return (
+    <div className="shell">
+      <aside id={navId} className={open ? 'sidebar is-open' : 'sidebar'}>
+        <div className="sidebar__brand">
+          <Link href="/" className="brand">
+            <span className="brand__mark" aria-hidden="true" />
+            <span className="brand__name">{T.product}</span>
+          </Link>
+        </div>
+        <SideNav me={me} can={can} unread={unread} />
+      </aside>
+      {open ? <div className="scrim is-open" aria-hidden="true" onClick={() => setOpen(false)} /> : null}
+      <div className="shell__body">
+        <TopBar
+          me={me}
+          companies={companies}
+          companyError={companyError}
+          onCompanyChanged={onCompanyChanged}
+          menuButton={
+            <button
+              type="button"
+              className="menu-toggle"
+              aria-label={T.navLabel}
+              aria-controls={navId}
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+            >
+              <span className="menu-toggle__bar" aria-hidden="true" />
+              <span className="menu-toggle__bar" aria-hidden="true" />
+              <span className="menu-toggle__bar" aria-hidden="true" />
+            </button>
+          }
+        />
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -180,11 +257,13 @@ function TopBar({
   companies,
   companyError,
   onCompanyChanged,
+  menuButton,
 }: {
   me: Me;
   companies: Company[];
   companyError: string;
   onCompanyChanged: () => Promise<void>;
+  menuButton: ReactNode;
 }) {
   const T = useT(TEXT);
   const selectId = useId();
@@ -202,15 +281,15 @@ function TopBar({
   }
 
   return (
-    <header
-      style={{
-        display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: '#1f2937', color: '#f9fafb',
-        flexWrap: 'wrap',
-      }}
-    >
-      <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: 16 }}>{T.product}</Link>
+    <header className="topbar">
+      {menuButton}
+      {/* 좁은 화면에서만 보이는 제품 이름(넓은 화면은 사이드바 위에 있다) */}
+      <Link href="/" className="brand topbar__brand">
+        <span className="brand__mark" aria-hidden="true" />
+        <span className="brand__name">{T.product}</span>
+      </Link>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+      <div className="topbar__company">
         {me.userType === 'SYSTEM_ADMIN' ? (
           <>
             <label htmlFor={selectId}>{T.actingCompany}</label>
@@ -219,7 +298,6 @@ function TopBar({
               value={me.actingCompanyId ?? ''}
               disabled={busy}
               onChange={(e) => void selectCompany(e.target.value)}
-              style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid #4b5563', fontSize: 13, maxWidth: 260 }}
             >
               <option value="">{T.noCompany}</option>
               {companies.map((c) => (
@@ -233,18 +311,23 @@ function TopBar({
           </>
         ) : (
           <span>
-            {T.companyOwn}: <span style={{ color: '#d1d5db' }}>{me.company ? `${me.company.name} (${me.company.code})` : '-'}</span>
+            {T.companyOwn}: <span className="topbar__company-name">{me.company ? `${me.company.name} (${me.company.code})` : '-'}</span>
           </span>
         )}
       </div>
       {error || companyError ? (
-        <span role="alert" style={{ color: '#fecaca', fontSize: 13 }}>{error || companyError}</span>
+        <span role="alert" className="topbar__error">{error || companyError}</span>
       ) : null}
 
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 13 }}>
-        <LangSwitcher dark />
-        <span>
-          {me.displayName} <span style={{ color: '#9ca3af' }}>({me.loginId} · {userTypeLabel[me.userType] ?? me.userType})</span>
+      <div className="topbar__right">
+        {/* 로그인한 사용자는 고른 언어를 계정에도 저장한다(결과는 기다리지 않고 화면은 바로 바뀐다). */}
+        <LangSwitcher dark onChosen={saveUserLang} />
+        <span className="user-chip">
+          <span className="user-chip__avatar" aria-hidden="true">{initial(me.displayName)}</span>
+          <span className="user-chip__text">
+            <span className="user-chip__name">{me.displayName}</span>
+            <span className="user-chip__meta">({me.loginId} · {userTypeLabel[me.userType] ?? me.userType})</span>
+          </span>
         </span>
         <Button
           small
@@ -260,8 +343,15 @@ function TopBar({
   );
 }
 
-/** 화면에는 보이지 않고 화면 낭독기만 읽는 글자 */
-const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' } as const;
+/** 고른 화면 언어를 계정에 저장한다. 실패해도 화면은 이미 바뀌었으므로 결과는 보지 않는다. */
+function saveUserLang(lang: Lang): void {
+  void api<{ saved: boolean }>('PATCH', '/api/me', { lang });
+}
+
+/** 사용자 표시의 첫 글자(장식용 아바타) */
+function initial(name: string): string {
+  return Array.from(name.trim())[0]?.toUpperCase() ?? '';
+}
 
 interface NavItem {
   href: string;
@@ -325,13 +415,11 @@ function SideNav({ me, can, unread }: { me: Me; can: (resource: string, operatio
   ].filter((sec) => sec.items.length > 0);
 
   return (
-    <nav aria-label={T.navLabel} style={{ width: 180, flexShrink: 0, background: '#fff', borderRight: '1px solid #e2e5ea', padding: '14px 0' }}>
+    <nav aria-label={T.navLabel} className="sidebar__nav">
       {sections.map((sec, i) => (
-        <div key={sec.title ?? `section-${i}`} style={{ marginTop: i === 0 ? 0 : 12 }}>
-          {sec.title ? (
-            <div style={{ padding: '4px 18px', fontSize: 12, fontWeight: 600, color: '#6b7280' }}>{sec.title}</div>
-          ) : null}
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={sec.title}>
+        <div key={sec.title ?? `section-${i}`} className="nav-section">
+          {sec.title ? <div className="nav-heading">{sec.title}</div> : null}
+          <ul className="nav-list" aria-label={sec.title}>
             {sec.items.map((it) => {
               const active = it.href === '/' || it.exact ? pathname === it.href : pathname === it.href || pathname.startsWith(it.href + '/');
               return (
@@ -339,22 +427,15 @@ function SideNav({ me, can, unread }: { me: Me; can: (resource: string, operatio
                   <Link
                     href={it.href}
                     aria-current={active ? 'page' : undefined}
-                    style={{
-                      display: 'block', padding: '8px 18px', fontSize: 14, textDecoration: 'none',
-                      color: active ? '#1d4ed8' : '#1f2937', background: active ? '#eef4ff' : 'transparent',
-                      borderLeft: active ? '3px solid #2563eb' : '3px solid transparent',
-                    }}
+                    className="nav-link"
                   >
                     {it.label}
                     {it.count ? (
                       <>
-                        <span
-                          aria-hidden="true"
-                          style={{ marginLeft: 6, display: 'inline-block', minWidth: 18, padding: '0 6px', borderRadius: 9, background: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 600, lineHeight: '18px', textAlign: 'center' }}
-                        >
+                        <span aria-hidden="true" className="nav-badge">
                           {T.unreadBadge(it.count)}
                         </span>
-                        <span style={srOnly}>{` (${T.unreadLabel(it.count)})`}</span>
+                        <span className="sr-only">{` (${T.unreadLabel(it.count)})`}</span>
                       </>
                     ) : null}
                   </Link>
@@ -374,9 +455,7 @@ export function RequireCompany({ children }: { children: ReactNode }) {
   const { me, effectiveCompanyId } = useShell();
   if (me.userType === 'SYSTEM_ADMIN' && !effectiveCompanyId) {
     return (
-      <p style={{ background: '#fff', border: '1px solid #e2e5ea', borderRadius: 6, padding: '12px 14px', fontSize: 14 }}>
-        {T.pickCompany}
-      </p>
+      <p className="notice">{T.pickCompany}</p>
     );
   }
   return <>{children}</>;

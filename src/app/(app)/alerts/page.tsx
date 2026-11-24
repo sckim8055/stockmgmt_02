@@ -17,7 +17,7 @@ export default function AlertsPage() {
   return (
     <RequireCompany>
       {/* useSearchParams 는 Suspense 경계 안에서 써야 한다(Next.js 빌드 규칙). */}
-      <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
+      <Suspense fallback={<p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>}>
         <AlertsInner />
       </Suspense>
     </RequireCompany>
@@ -100,20 +100,20 @@ function AlertsInner() {
           <input type="checkbox" checked={unreadOnly} onChange={(e) => setParams({ unreadOnly: e.target.checked ? 'true' : null })} />
           {T.unreadOnly}
         </label>
-        {data ? <span style={{ color: '#6b7280', fontSize: 13 }}>{T.summary(data.total, data.unread)}</span> : null}
+        {data ? <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{T.summary(data.total, data.unread)}</span> : null}
       </div>
 
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{actionError || loadError}</ErrorText>
-      {data === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
           {items.length === 0 ? (
-            <p style={{ background: '#fff', border: '1px solid #e2e5ea', borderRadius: 6, padding: 20, textAlign: 'center', color: '#6b7280', fontSize: 14 }}>
+            <p style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
               {unreadOnly ? T.emptyUnread : T.empty}
             </p>
           ) : (
-            <ul aria-label={T.listLabel} style={{ listStyle: 'none', margin: 0, padding: 0, background: '#fff', border: '1px solid #e2e5ea', borderRadius: 6 }}>
+            <ul aria-label={T.listLabel} style={{ listStyle: 'none', margin: 0, padding: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
               {items.map((a, i) => (
                 <AlertRow key={a.id} alert={a} first={i === 0} busy={busy} onRead={() => void markRead({ ids: [a.id] })} />
               ))}
@@ -137,15 +137,15 @@ function AlertRow({ alert, first, busy, onRead }: { alert: AlertItem; first: boo
   return (
     <li
       style={{
-        display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 14px', borderTop: first ? 0 : '1px solid #eef0f3',
-        background: unread ? '#f5f8ff' : '#fff', borderLeft: unread ? '3px solid #2563eb' : '3px solid transparent',
+        display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 14px', borderTop: first ? 0 : '1px solid var(--border-subtle)',
+        background: unread ? 'var(--accent-bg)' : 'var(--surface)', borderLeft: unread ? '3px solid var(--accent-blue)' : '3px solid transparent',
       }}
     >
       <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
           {isKnownType(alert.type) ? <Badge tone={ALERT_TYPE_TONE[alert.type]}>{AL.type[alert.type]}</Badge> : <Badge tone="gray">{alert.type}</Badge>}
-          {unread ? <span style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 600 }}>{T.unreadMark}</span> : null}
-          <time dateTime={alert.created_at} style={{ fontSize: 12, color: '#6b7280' }}>{F.dateTime(alert.created_at)}</time>
+          {unread ? <span style={{ fontSize: 12, color: 'var(--accent-text)', fontWeight: 600 }}>{T.unreadMark}</span> : null}
+          <time dateTime={alert.created_at} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{F.dateTime(alert.created_at)}</time>
         </div>
         {view.text ? <div style={{ fontWeight: unread ? 600 : undefined }}>{view.text}</div> : null}
         {link ? <Link href={link} style={{ fontSize: 13 }}>{T.open}</Link> : null}

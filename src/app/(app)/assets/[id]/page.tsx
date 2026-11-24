@@ -54,7 +54,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
     void load();
   }, [load]);
 
-  if (state.kind === 'loading') return <p style={{ color: '#6b7280' }}>{T.loading}</p>;
+  if (state.kind === 'loading') return <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>;
   if (state.kind === 'notfound') {
     return (
       <div>
@@ -95,7 +95,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
       <Link href="/assets" style={{ fontSize: 14 }}>{T.back}</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '10px 0 14px', flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 20, margin: 0 }}>{a.asset_tag}</h1>
-        <span style={{ color: '#4b5563' }}>{modelLabel({ manufacturer: a.manufacturer, name: a.model_name })}</span>
+        <span style={{ color: 'var(--text-secondary)' }}>{modelLabel({ manufacturer: a.manufacturer, name: a.model_name })}</span>
         <StateBadge state={a.state} substate={a.substate} />
         {canEdit ? (
           <div style={{ marginLeft: 'auto' }}>
@@ -114,7 +114,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
         </div>
       ) : null}
 
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{problem}</ErrorText>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
@@ -133,7 +133,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
             {a.holder_name ? (
               <>
                 {a.holder_name}
-                {a.holder_employee_no ? <span style={{ color: '#6b7280' }}> ({a.holder_employee_no})</span> : null}
+                {a.holder_employee_no ? <span style={{ color: 'var(--text-muted)' }}> ({a.holder_employee_no})</span> : null}
               </>
             ) : null}
           </Info>
@@ -155,7 +155,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
           {'supplier' in a ? <Info label={T.supplier}>{a.supplier}</Info> : null}
         </Section>
         <Section title={T.secCustom}>
-          {customEntries.length === 0 ? <div style={{ gridColumn: '1 / -1', color: '#6b7280' }}>{T.customNone}</div> : null}
+          {customEntries.length === 0 ? <div style={{ gridColumn: '1 / -1', color: 'var(--text-muted)' }}>{T.customNone}</div> : null}
           {customEntries.map(([k, v]) => (
             <Info key={k} label={defs.find((d) => d.key === k)?.label ?? k}>{customDisplay(v)}</Info>
           ))}
@@ -204,7 +204,7 @@ function AssetDetail({ assetId }: { assetId: string }) {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section style={{ background: '#fff', border: '1px solid #e2e5ea', borderRadius: 8, padding: '12px 14px' }}>
+    <section style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' }}>
       <h2 style={{ fontSize: 15, margin: '0 0 8px' }}>{title}</h2>
       <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '6px 14px', fontSize: 14 }}>{children}</dl>
     </section>
@@ -214,7 +214,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Info({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: 'contents' }}>
-      <dt style={{ color: '#6b7280' }}>{label}</dt>
+      <dt style={{ color: 'var(--text-muted)' }}>{label}</dt>
       <dd style={{ margin: 0 }}>{children ?? '-'}</dd>
     </div>
   );

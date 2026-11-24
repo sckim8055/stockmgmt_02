@@ -40,21 +40,21 @@ export function HistoryDialog({ stock, onClose }: { stock: StockRow; onClose: ()
   return (
     <Modal title={T.title(stockLabel(stock))} onClose={onClose} width={820}>
       <ErrorText>{error}</ErrorText>
-      {data === null && !error ? <p style={{ color: '#6b7280', fontSize: 14 }}>{T.loading}</p> : null}
+      {data === null && !error ? <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>{T.loading}</p> : null}
       {data ? (
         <>
-          <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>{T.qtyHint}</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 8px' }}>{T.qtyHint}</p>
           <Table head={head}>
             {rows.length === 0 ? <EmptyRow colSpan={head.length}>{T.empty}</EmptyRow> : null}
             {rows.map((h) => (
               <tr key={h.id}>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={h.created_at}>{F.dateTime(h.created_at)}</time></td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{L.txn[h.type] ?? h.type}</td>
-                <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: h.qty < 0 ? '#b91c1c' : '#166534' }}>{F.signed(h.qty)}</td>
+                <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: h.qty < 0 ? 'var(--danger-text)' : 'var(--success-text)' }}>{F.signed(h.qty)}</td>
                 <td style={td}>{h.person_name ?? ''}</td>
                 <td style={td}>{h.actor_name ?? T.unknownActor}</td>
                 <td style={td}>
-                  {h.location_note ? <div style={{ color: '#6b7280', fontSize: 13 }}>{T.location(h.location_note)}</div> : null}
+                  {h.location_note ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{T.location(h.location_note)}</div> : null}
                   {h.note ?? ''}
                 </td>
               </tr>

@@ -2,11 +2,13 @@
 import { useState, type FormEvent } from 'react';
 import { useT } from '../i18n';
 import { LangSwitcher } from '../i18n/switcher';
-import { button, card, ErrorText, Field, input, postJson } from '../ui';
+import { authButtonClass, authCardClass, authInputClass, ErrorText, Field, postJson } from '../ui';
 import { TEXT } from './page.text';
+import { TEXT as SHELL_TEXT } from '../shell.text';
 
 export default function ChangePasswordPage() {
   const T = useT(TEXT);
+  const S = useT(SHELL_TEXT);
   const [currentPassword, setCurrent] = useState('');
   const [newPassword, setNew] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -31,24 +33,28 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <main style={card}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+    <main className={authCardClass}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+        <span className="brand">
+          <span className="brand__mark" aria-hidden="true" />
+          <span className="brand__name">{S.product}</span>
+        </span>
         <LangSwitcher />
       </div>
-      <h1 style={{ fontSize: 20, marginTop: 0 }}>{T.title}</h1>
-      <p style={{ fontSize: 13, color: '#4b5563' }}>{T.rule}</p>
+      <h1>{T.title}</h1>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{T.rule}</p>
       <form onSubmit={submit}>
         <Field label={T.current}>
-          <input style={input} type="password" value={currentPassword} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
+          <input className={authInputClass} type="password" value={currentPassword} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
         </Field>
         <Field label={T.next}>
-          <input style={input} type="password" value={newPassword} onChange={(e) => setNew(e.target.value)} autoComplete="new-password" required />
+          <input className={authInputClass} type="password" value={newPassword} onChange={(e) => setNew(e.target.value)} autoComplete="new-password" required />
         </Field>
         <Field label={T.confirm}>
-          <input style={input} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required />
+          <input className={authInputClass} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required />
         </Field>
         <ErrorText>{error}</ErrorText>
-        <button style={button} disabled={busy}>{busy ? T.changing : T.submit}</button>
+        <button className={authButtonClass} disabled={busy}>{busy ? T.changing : T.submit}</button>
       </form>
     </main>
   );

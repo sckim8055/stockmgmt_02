@@ -52,7 +52,7 @@ export function DateRangeFilter({ from, to, onChange }: { from: string; to: stri
 export function RangeHint({ invalid }: { invalid: boolean }) {
   const T = useT(TEXT);
   return (
-    <p id="history-range-hint" role={invalid ? 'alert' : undefined} style={{ fontSize: 12, color: invalid ? '#b91c1c' : '#6b7280', margin: '0 0 10px' }}>
+    <p id="history-range-hint" role={invalid ? 'alert' : undefined} style={{ fontSize: 12, color: invalid ? 'var(--danger-text)' : 'var(--text-muted)', margin: '0 0 10px' }}>
       {invalid ? T.rangeInvalid : T.rangeHint}
     </p>
   );

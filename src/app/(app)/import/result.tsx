@@ -15,14 +15,14 @@ export function CreatedList({ created, done }: { created: ImportResult['created'
     [T.models, created.models],
   ];
   const hasAny = groups.some(([, names]) => names.length > 0);
-  if (!hasAny) return done ? null : <p style={{ fontSize: 13, color: '#6b7280', margin: '6px 0' }}>{T.createdNone}</p>;
+  if (!hasAny) return done ? null : <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '6px 0' }}>{T.createdNone}</p>;
   return (
     <div style={{ fontSize: 13, margin: '6px 0' }}>
       <div style={{ fontWeight: 600, marginBottom: 2 }}>{done ? T.createdTitleDone : T.createdTitlePreview}</div>
       <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 10px' }}>
         {groups.filter(([, names]) => names.length > 0).map(([label, names]) => (
           <div key={label} style={{ display: 'contents' }}>
-            <dt style={{ color: '#6b7280' }}>{label} ({names.length})</dt>
+            <dt style={{ color: 'var(--text-muted)' }}>{label} ({names.length})</dt>
             <dd style={{ margin: 0 }}>{names.join(', ')}</dd>
           </div>
         ))}
@@ -38,10 +38,10 @@ export function CheckResult({ result, rejected }: { result: ImportResult; reject
   const clean = errors.length === 0;
   return (
     <div style={{ marginTop: 10 }}>
-      <p role="status" style={{ fontSize: 14, margin: '0 0 4px', color: clean ? '#166534' : '#b91c1c' }}>
+      <p role="status" style={{ fontSize: 14, margin: '0 0 4px', color: clean ? 'var(--success-text)' : 'var(--danger-text)' }}>
         {rejected ? T.commitRejected : clean ? T.previewClean(result.totalRows) : T.hasErrors(errors.length)}
       </p>
-      <p style={{ fontSize: 13, color: '#4b5563', margin: '0 0 4px' }}>{T.rows(result.totalRows)}</p>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 4px' }}>{T.rows(result.totalRows)}</p>
       {clean ? <CreatedList created={result.created} done={false} /> : null}
       {errors.length > 0 ? (
         <>
@@ -53,7 +53,7 @@ export function CheckResult({ result, rejected }: { result: ImportResult; reject
               </tr>
             ))}
           </Table>
-          {errors.length >= ERROR_CAP ? <p style={{ fontSize: 12, color: '#6b7280' }}>{T.errorsCapped}</p> : null}
+          {errors.length >= ERROR_CAP ? <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.errorsCapped}</p> : null}
         </>
       ) : null}
     </div>

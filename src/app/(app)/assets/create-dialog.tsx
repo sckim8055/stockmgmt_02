@@ -143,8 +143,8 @@ export function CreateAssetDialog({
           </LabeledField>
         ) : null}
         {defs.length > 0 ? (
-          <fieldset style={{ border: '1px solid #e2e5ea', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
-            <legend style={{ fontSize: 13, color: '#4b5563', padding: '0 4px' }}>{T.customTitle}</legend>
+          <fieldset style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
+            <legend style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 4px' }}>{T.customTitle}</legend>
             <CustomFieldInputs defs={defs} draft={custom} onChange={setCustom} />
           </fieldset>
         ) : null}

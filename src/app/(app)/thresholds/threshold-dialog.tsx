@@ -35,7 +35,7 @@ function RecoverHint({ minQty, ratio }: { minQty: string; ratio: string }) {
   const q = parseMinQty(minQty);
   const r = parseRatio(ratio);
   if (q === null || r === null) return null;
-  return <p style={{ fontSize: 13, color: '#374151', margin: '-4px 0 12px' }}>{T.recoverPreview(recoverAt({ min_qty: q, warn_ratio: r }))}</p>;
+  return <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '-4px 0 12px' }}>{T.recoverPreview(recoverAt({ min_qty: q, warn_ratio: r }))}</p>;
 }
 
 function QtyAndRatio({ minQty, setMinQty, ratio, setRatio }: { minQty: string; setMinQty: (v: string) => void; ratio: string; setRatio: (v: string) => void }) {
@@ -116,7 +116,7 @@ export function CreateThresholdDialog({ onClose, onDone }: { onClose: () => void
     <Modal title={T.createTitle} onClose={onClose} width={520}>
       <form onSubmit={submit}>
         <fieldset style={{ border: 0, padding: 0, margin: '0 0 12px', fontSize: 14 }}>
-          <legend style={{ fontSize: 13, color: '#4b5563', padding: 0, marginBottom: 4 }}>{T.fTargetType}</legend>
+          <legend style={{ fontSize: 13, color: 'var(--text-secondary)', padding: 0, marginBottom: 4 }}>{T.fTargetType}</legend>
           {TARGET_TYPES.map((t) => (
             <label key={t} style={{ marginRight: 16 }}>
               <input type="radio" name="targetType" value={t} checked={targetType === t} onChange={() => { setTargetType(t); setTargetId(''); }} /> {TL.targetType[t]}
@@ -188,18 +188,18 @@ export function EditThresholdDialog({ threshold, onClose, onDone }: { threshold:
     <Modal title={T.editTitle(threshold.target_name)} onClose={onClose} width={480}>
       <form onSubmit={submit}>
         <dl style={{ display: 'grid', gridTemplateColumns: '60px 1fr', rowGap: 4, fontSize: 14, margin: '0 0 6px' }}>
-          <dt style={{ color: '#6b7280' }}>{T.fixedTarget}</dt>
+          <dt style={{ color: 'var(--text-muted)' }}>{T.fixedTarget}</dt>
           <dd style={{ margin: 0 }}>{threshold.target_name} · {TL.kind[threshold.kind]}</dd>
-          <dt style={{ color: '#6b7280' }}>{T.fixedDept}</dt>
+          <dt style={{ color: 'var(--text-muted)' }}>{T.fixedDept}</dt>
           <dd style={{ margin: 0 }}>{threshold.department_name ?? T.all}</dd>
         </dl>
-        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 12px' }}>{T.fixed}</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 12px' }}>{T.fixed}</p>
         <QtyAndRatio minQty={minQty} setMinQty={setMinQty} ratio={ratio} setRatio={setRatio} />
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14 }}>
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
           {T.fActive}
         </label>
-        <div style={{ fontSize: 12, color: '#6b7280', margin: '2px 0 12px' }}>{T.fActiveHint}</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '2px 0 12px' }}>{T.fActiveHint}</div>
         <ErrorText>{error}</ErrorText>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Button onClick={onClose} disabled={busy}>{T.cancel}</Button>

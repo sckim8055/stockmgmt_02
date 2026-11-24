@@ -184,19 +184,20 @@ export function PersonPicker({
         style={{ ...smallInput, marginBottom: 4 }}
       />
       <ErrorText>{error}</ErrorText>
-      {dq && results === null && !error ? <div style={{ fontSize: 13, color: '#6b7280' }}>{T.searching}</div> : null}
-      {results && results.length === 0 ? <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 12 }}>{T.noPerson}</div> : null}
+      {dq && results === null && !error ? <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{T.searching}</div> : null}
+      {results && results.length === 0 ? <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>{T.noPerson}</div> : null}
       {results && results.length > 0 ? (
-        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', border: '1px solid #e2e5ea', borderRadius: 6, maxHeight: 200, overflowY: 'auto' }}>
+        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', border: '1px solid var(--border)', borderRadius: 6, maxHeight: 200, overflowY: 'auto' }}>
           {results.map((p) => (
             <li key={p.id}>
               <button
                 type="button"
                 onClick={() => onChange({ id: p.id, name: p.name })}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 0, background: '#fff', cursor: 'pointer', fontSize: 14 }}
+                className="picker-option"
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 0, cursor: 'pointer', fontSize: 14 }}
               >
                 {p.name}
-                <span style={{ color: '#6b7280', fontSize: 12 }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                   {p.employee_no ? ` · ${p.employee_no}` : ''}
                   {p.department_name ? ` · ${p.department_name}` : ''}
                   {p.is_active ? '' : ` ${T.inactive}`}

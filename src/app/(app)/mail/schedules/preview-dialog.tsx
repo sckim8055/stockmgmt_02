@@ -28,26 +28,26 @@ export function PreviewDialog({ schedule, onClose }: { schedule: ScheduleRow; on
 
   return (
     <Modal title={T.title(schedule.name)} onClose={onClose} width={760} footer={<Button onClick={onClose}>{T.close}</Button>}>
-      <p role="note" style={{ background: '#fef6e4', color: '#92400e', borderRadius: 6, padding: '8px 12px', fontSize: 13, margin: '0 0 12px' }}>{M.sendingDisabled}</p>
+      <p role="note" style={{ background: 'var(--warning-bg)', color: 'var(--warning-text)', borderRadius: 6, padding: '8px 12px', fontSize: 13, margin: '0 0 12px' }}>{M.sendingDisabled}</p>
       <ErrorText>{error}</ErrorText>
-      {data === null && !error ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !error ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
-          <p role="status" style={{ fontSize: 14, margin: '0 0 10px', color: data.empty ? '#92400e' : '#166534' }}>
+          <p role="status" style={{ fontSize: 14, margin: '0 0 10px', color: data.empty ? 'var(--warning-text)' : 'var(--success-text)' }}>
             {data.empty ? (schedule.skip_if_empty ? T.skipped : T.emptySent) : `${T.wouldSend} (${M.content[schedule.content_type]} · ${T.rows(data.rows)})`}
           </p>
-          <div style={{ fontSize: 13, color: '#4b5563' }}>{T.subject}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{T.subject}</div>
           <p style={{ fontSize: 15, fontWeight: 600, margin: '2px 0 12px' }}>{data.subject}</p>
-          <div style={{ fontSize: 13, color: '#4b5563' }}>{T.body}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{T.body}</div>
           <pre
             style={{
-              margin: '4px 0 6px', padding: '10px 12px', background: '#f8f9fb', border: '1px solid #e2e5ea', borderRadius: 6,
+              margin: '4px 0 6px', padding: '10px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6,
               fontSize: 13, lineHeight: 1.5, maxHeight: 420, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             }}
           >
             {data.text}
           </pre>
-          <div style={{ fontSize: 12, color: '#6b7280' }}>{T.htmlNote}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.htmlNote}</div>
         </>
       ) : null}
     </Modal>

@@ -23,7 +23,7 @@ export default function AssetsPage() {
   return (
     <RequireCompany>
       {/* useSearchParams 는 Suspense 경계 안에서 써야 한다(Next.js 빌드 규칙). */}
-      <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
+      <Suspense fallback={<p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>}>
         <AssetsInner />
       </Suspense>
     </RequireCompany>
@@ -111,7 +111,7 @@ function AssetsInner() {
         type="button"
         onClick={() => setParams({ sort: key, order: active && order === 'asc' ? 'desc' : 'asc' })}
         aria-label={active ? `${label} (${order === 'asc' ? T.sortAsc : T.sortDesc})` : label}
-        style={{ border: 0, background: 'transparent', font: 'inherit', fontWeight: 600, cursor: 'pointer', padding: 0, color: active ? '#1d4ed8' : 'inherit' }}
+        style={{ border: 0, background: 'transparent', font: 'inherit', fontWeight: 600, cursor: 'pointer', padding: 0, color: active ? 'var(--accent-text)' : 'inherit' }}
       >
         {label}{active ? (order === 'asc' ? ' ▲' : ' ▼') : ''}
       </button>
@@ -221,12 +221,12 @@ function AssetsInner() {
       </div>
 
       {created ? (
-        <p role="status" style={{ color: '#166534', fontSize: 14 }}>
+        <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>
           {T.created(created.tag)} <Link href={`/assets/${created.id}`}>{T.openCreated}</Link>
         </p>
       ) : null}
       <ErrorText>{loadError}</ErrorText>
-      {data === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
           <Table caption={T.total(data.total)} head={head}>
@@ -240,7 +240,7 @@ function AssetsInner() {
                 <td style={td}><StateBadge state={a.state} substate={a.substate} /></td>
                 <td style={td}>
                   {a.holder_name ?? ''}
-                  {a.holder_employee_no ? <span style={{ color: '#6b7280', fontSize: 12 }}> {a.holder_employee_no}</span> : null}
+                  {a.holder_employee_no ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> {a.holder_employee_no}</span> : null}
                 </td>
                 <td style={td}>{a.department_name}</td>
                 <td style={td}>{a.location ?? ''}</td>
@@ -280,7 +280,7 @@ function AssetsInner() {
 function FilterBox({ label, width, children }: { label: string; width?: number; children: (id: string) => ReactNode }) {
   const id = useId();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13, color: '#4b5563', width }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13, color: 'var(--text-secondary)', width }}>
       <label htmlFor={id}>{label}</label>
       {children(id)}
     </div>

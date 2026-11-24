@@ -76,12 +76,12 @@ export function ImportCard({ kind }: { kind: ImportKind }) {
   const ready = current !== null && !current.rejected && current.result.errors.length === 0 && current.result.totalRows > 0;
 
   return (
-    <section aria-labelledby={`${inputId}-title`} style={{ background: '#fff', border: '1px solid #e2e5ea', borderRadius: 8, padding: '14px 16px' }}>
+    <section aria-labelledby={`${inputId}-title`} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px' }}>
       <h2 id={`${inputId}-title`} style={{ fontSize: 16, margin: '0 0 4px' }}>{text.title}</h2>
-      <p style={{ fontSize: 13, color: '#4b5563', margin: '0 0 10px' }}>{text.intro}</p>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 10px' }}>{text.intro}</p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <Button small onClick={() => void download()} disabled={busy !== null}>{busy === 'download' ? T.downloading : T.download}</Button>
-        <label htmlFor={inputId} style={{ fontSize: 13, color: '#4b5563' }}>{T.pickFile}</label>
+        <label htmlFor={inputId} style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{T.pickFile}</label>
         <input
           id={inputId}
           type="file"
@@ -99,7 +99,7 @@ export function ImportCard({ kind }: { kind: ImportKind }) {
       <ErrorText>{error}</ErrorText>
       {current ? <CheckResult result={current.result} rejected={current.rejected} /> : null}
       {done ? (
-        <div role="status" style={{ marginTop: 10, background: '#e7f6ec', color: '#166534', borderRadius: 6, padding: '10px 12px', fontSize: 14 }}>
+        <div role="status" style={{ marginTop: 10, background: 'var(--success-bg)', color: 'var(--success-text)', borderRadius: 6, padding: '10px 12px', fontSize: 14 }}>
           {T.done(done.totalRows)}
           {can(...info.list.permission) ? <> <Link href={info.list.href}>{text.listLabel}</Link></> : null}
           <CreatedList created={done.created} done />

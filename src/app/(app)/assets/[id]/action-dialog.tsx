@@ -79,7 +79,7 @@ export function ActionDialog({
     <Modal title={T.title(label, asset.asset_tag)} onClose={onClose} width={480}>
       <form onSubmit={submit}>
         {warn ? (
-          <div role="note" style={{ background: '#fdecec', color: '#991b1b', borderRadius: 6, padding: '10px 12px', fontSize: 14, marginBottom: 12, lineHeight: 1.5 }}>
+          <div role="note" style={{ background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: 6, padding: '10px 12px', fontSize: 14, marginBottom: 12, lineHeight: 1.5 }}>
             {warn}
           </div>
         ) : null}

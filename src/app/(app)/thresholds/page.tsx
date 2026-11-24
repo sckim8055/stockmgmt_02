@@ -64,29 +64,29 @@ function ThresholdsInner() {
         title={T.title}
         actions={can('threshold', 'create') ? <Button variant="primary" onClick={() => { setNotice(''); setDialog({ kind: 'create' }); }}>{T.add}</Button> : null}
       />
-      <p style={{ fontSize: 13, color: '#4b5563', marginTop: 0 }}>{T.intro}</p>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 0 }}>{T.intro}</p>
       {perms.departmentScope !== null ? <Notice>{T.scopedNote}</Notice> : null}
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{loadError}</ErrorText>
-      {rows === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {rows === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {rows ? (
         <Table caption={T.total(rows.length)} head={head}>
           {rows.length === 0 ? <EmptyRow colSpan={head.length}>{T.empty}</EmptyRow> : null}
           {rows.map((t) => {
             const low = t.is_active && t.state === 'LOW';
             return (
-              <tr key={t.id} style={low ? { background: '#fff7f7' } : t.is_active ? undefined : { color: '#6b7280' }}>
+              <tr key={t.id} style={low ? { background: 'var(--danger-row-bg)' } : t.is_active ? undefined : { color: 'var(--text-muted)' }}>
                 <td style={td}>
                   <Badge tone={KIND_TONE[t.kind]}>{TL.kind[t.kind]}</Badge>
                   {t.target_name}
-                  <span style={{ color: '#6b7280', fontSize: 12 }}> ({t.category_id ? TL.targetType.category : TL.targetType.model})</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> ({t.category_id ? TL.targetType.category : TL.targetType.model})</span>
                 </td>
                 <td style={td}>{t.department_name ?? T.all}</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: low ? 600 : undefined, color: low ? '#991b1b' : undefined }}>{F.num(t.qty)}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: low ? 600 : undefined, color: low ? 'var(--danger-text)' : undefined }}>{F.num(t.qty)}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{F.num(t.min_qty)}</td>
                 <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {F.num(recoverAt(t))}
-                  <span style={{ color: '#6b7280', fontSize: 12 }}> {T.ratio(F.decimal(t.warn_ratio))}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> {T.ratio(F.decimal(t.warn_ratio))}</span>
                 </td>
                 <td style={td}>
                   {!t.is_active ? <Badge tone="gray">{T.stateOff}</Badge> : low ? <Badge tone="red">{T.stateLow}</Badge> : <Badge tone="green">{T.stateOk}</Badge>}

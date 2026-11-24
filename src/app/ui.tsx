@@ -3,23 +3,28 @@ import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSS
 import { getActiveLang, useT } from './i18n';
 import { TEXT } from './ui.text';
 
-// 0단계의 임시 화면 부품. 화면 디자인은 5단계에서 기존 스타일로 교체한다.
+// 로그인 전 화면(로그인·비밀번호 변경)의 부품. 색과 모양은 globals.css 의 토큰·클래스가 정한다.
+// 예전처럼 style 로도 쓸 수 있게 객체를 남겨 두되 색은 토큰(var(--…))만 쓴다.
 export const card: CSSProperties = {
-  maxWidth: 380, margin: '10vh auto', padding: 28, background: '#fff', borderRadius: 10,
-  boxShadow: '0 1px 4px rgba(0,0,0,.12)',
+  maxWidth: 400, margin: '10vh auto', padding: 28, background: 'var(--surface)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-modal)',
 };
 export const input: CSSProperties = {
-  width: '100%', padding: '10px 12px', margin: '6px 0 14px', border: '1px solid #c9ced6', borderRadius: 6,
-  boxSizing: 'border-box', fontSize: 15,
+  width: '100%', padding: '10px 12px', margin: '6px 0 14px', borderRadius: 'var(--radius-sm)', boxSizing: 'border-box', fontSize: 15,
 };
 export const button: CSSProperties = {
-  width: '100%', padding: '11px 12px', border: 0, borderRadius: 6, background: '#2563eb', color: '#fff',
-  fontSize: 15, cursor: 'pointer',
+  width: '100%', padding: '11px 12px', border: 0, borderRadius: 'var(--radius-sm)',
+  background: 'linear-gradient(135deg, var(--accent-blue-strong), var(--accent-purple-strong))', color: 'var(--text-on-accent)',
+  fontSize: 15, fontWeight: 600, cursor: 'pointer',
 };
+/** 로그인 전 화면의 카드·입력·버튼 클래스(globals.css) */
+export const authCardClass = 'auth-card';
+export const authInputClass = 'auth-input';
+export const authButtonClass = 'btn btn--primary btn--block';
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label style={{ display: 'block', fontSize: 13, color: '#4b5563' }}>
+    <label className="field">
       {label}
       {children}
     </label>
@@ -28,7 +33,7 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 export function ErrorText({ children }: { children: ReactNode }) {
   if (!children) return null;
-  return <p role="alert" style={{ color: '#b91c1c', fontSize: 14 }}>{children}</p>;
+  return <p role="alert" className="error-text">{children}</p>;
 }
 
 /**
@@ -222,57 +227,37 @@ export async function apiDownload(url: string, fileName: string): Promise<ApiRes
 // ── 버튼 ──
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'link';
 
-const BUTTON_VARIANTS: Record<ButtonVariant, CSSProperties> = {
-  primary: { background: '#2563eb', color: '#fff', border: '1px solid #2563eb' },
-  secondary: { background: '#fff', color: '#1c1f23', border: '1px solid #c9ced6' },
-  danger: { background: '#fff', color: '#b91c1c', border: '1px solid #f1b4b4' },
-  link: { background: 'transparent', color: '#2563eb', border: '1px solid transparent' },
-};
-
+// 모양은 globals.css 의 .btn 클래스가 정한다(hover·초점·사용 불가 상태 포함).
 export function Button({
   variant = 'secondary',
   small,
   type = 'button',
-  style,
+  className,
   ...rest
 }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'> & {
   variant?: ButtonVariant;
   small?: boolean;
   type?: 'button' | 'submit';
 }) {
-  const disabled = rest.disabled;
-  return (
-    <button
-      type={type}
-      style={{
-        padding: small ? '4px 9px' : '8px 14px',
-        fontSize: small ? 13 : 14,
-        borderRadius: 6,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.55 : 1,
-        whiteSpace: 'nowrap',
-        ...BUTTON_VARIANTS[variant],
-        ...style,
-      }}
-      {...rest}
-    />
-  );
+  const cls = ['btn', `btn--${variant}`, small ? 'btn--small' : '', className ?? ''].filter(Boolean).join(' ');
+  return <button type={type} className={cls} {...rest} />;
 }
 
 // ── 입력 ──
+// 크기·간격만 준다. 색·경계·hover·초점은 globals.css 의 input/select/textarea 기본 스타일이 정한다.
 export const smallInput: CSSProperties = {
-  width: '100%', padding: '7px 10px', margin: '4px 0 12px', border: '1px solid #c9ced6', borderRadius: 6,
-  boxSizing: 'border-box', fontSize: 14, background: '#fff',
+  width: '100%', padding: '7px 10px', margin: '4px 0 12px', borderRadius: 'var(--radius-sm)',
+  boxSizing: 'border-box', fontSize: 14,
 };
 
 /** 입력과 라벨을 id 로 묶는다. children 은 id 를 받아 입력 요소를 그린다. */
 export function LabeledField({ label, hint, children }: { label: string; hint?: string; children: (id: string) => ReactNode }) {
   const id = useId();
   return (
-    <div style={{ fontSize: 13, color: '#4b5563' }}>
+    <div className="field">
       <label htmlFor={id}>{label}</label>
       {children(id)}
-      {hint ? <div style={{ fontSize: 12, color: '#6b7280', marginTop: -8, marginBottom: 12 }}>{hint}</div> : null}
+      {hint ? <div className="field__hint">{hint}</div> : null}
     </div>
   );
 }
@@ -301,15 +286,15 @@ export function CheckboxList({
 }) {
   const set = new Set(selected);
   return (
-    <fieldset style={{ border: '1px solid #e2e5ea', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
-      <legend style={{ fontSize: 13, color: '#4b5563', padding: '0 4px' }}>{legend}</legend>
-      {hint ? <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>{hint}</div> : null}
+    <fieldset className="fieldset">
+      <legend>{legend}</legend>
+      {hint ? <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{hint}</div> : null}
       {options.length === 0 ? (
-        <div style={{ fontSize: 13, color: '#6b7280' }}>{emptyText}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{emptyText}</div>
       ) : (
-        <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4 }}>
+        <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4, padding: 2 }}>
           {options.map((o) => (
-            <label key={o.value} style={{ fontSize: 14, display: 'flex', gap: 6, alignItems: 'center', color: o.disabled ? '#9ca3af' : undefined }}>
+            <label key={o.value} className={o.disabled ? 'check-row is-disabled' : 'check-row'}>
               <input
                 type="checkbox"
                 checked={set.has(o.value)}
@@ -326,21 +311,21 @@ export function CheckboxList({
 }
 
 // ── 표 ──
+// 표의 테두리·바탕·행 hover·줄무늬는 globals.css 의 .table-wrap / .data-table 이 정한다.
 export const table: CSSProperties = {
-  width: '100%', borderCollapse: 'collapse', background: '#fff', fontSize: 14,
-  border: '1px solid #e2e5ea',
+  width: '100%', borderCollapse: 'collapse', fontSize: 14,
 };
 export const th: CSSProperties = {
-  textAlign: 'left', padding: '9px 10px', background: '#f0f2f5', borderBottom: '1px solid #e2e5ea',
-  fontWeight: 600, fontSize: 13, color: '#374151', whiteSpace: 'nowrap',
+  textAlign: 'left', padding: '10px 12px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)',
+  fontWeight: 600, fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap', letterSpacing: '0.02em',
 };
-export const td: CSSProperties = { padding: '8px 10px', borderBottom: '1px solid #eef0f3', verticalAlign: 'top' };
+export const td: CSSProperties = { padding: '9px 12px', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'top' };
 
 export function Table({ caption, head, children }: { caption?: string; head: ReactNode[]; children: ReactNode }) {
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={table}>
-        {caption ? <caption style={{ textAlign: 'left', padding: '0 0 6px', fontSize: 13, color: '#6b7280' }}>{caption}</caption> : null}
+    <div className="table-wrap">
+      <table className="data-table" style={table}>
+        {caption ? <caption>{caption}</caption> : null}
         <thead>
           <tr>
             {head.map((h, i) => (
@@ -357,41 +342,27 @@ export function Table({ caption, head, children }: { caption?: string; head: Rea
 export function EmptyRow({ colSpan, children }: { colSpan: number; children: ReactNode }) {
   return (
     <tr>
-      <td colSpan={colSpan} style={{ ...td, textAlign: 'center', color: '#6b7280', padding: 20 }}>{children}</td>
+      <td colSpan={colSpan} style={{ ...td, textAlign: 'center', color: 'var(--text-muted)', padding: 22 }}>{children}</td>
     </tr>
   );
 }
 
 // ── 표시 ──
-type BadgeTone = 'green' | 'gray' | 'red' | 'amber' | 'blue';
-const BADGE_TONES: Record<BadgeTone, CSSProperties> = {
-  green: { background: '#e7f6ec', color: '#166534' },
-  gray: { background: '#eef0f3', color: '#4b5563' },
-  red: { background: '#fdecec', color: '#991b1b' },
-  amber: { background: '#fef6e4', color: '#92400e' },
-  blue: { background: '#e8f0fe', color: '#1e40af' },
-};
+// 상태 색은 화면 전체에서 같다: green=정상·완료, blue=사용 중·진행, amber=주의, red=위험·연체·부족, gray=비활성.
+export type BadgeTone = 'green' | 'gray' | 'red' | 'amber' | 'blue';
 export function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
-  return (
-    <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 10, fontSize: 12, marginRight: 4, whiteSpace: 'nowrap', ...BADGE_TONES[tone] }}>
-      {children}
-    </span>
-  );
+  return <span className={`badge badge--${tone}`}>{children}</span>;
 }
 
 export function Notice({ children }: { children: ReactNode }) {
-  return (
-    <p style={{ background: '#fff', border: '1px solid #e2e5ea', borderRadius: 6, padding: '12px 14px', fontSize: 14, color: '#374151' }}>
-      {children}
-    </p>
-  );
+  return <p className="notice">{children}</p>;
 }
 
 export function PageHeader({ title, actions }: { title: string; actions?: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
-      <h1 style={{ fontSize: 20, margin: 0 }}>{title}</h1>
-      {actions ? <div style={{ display: 'flex', gap: 8 }}>{actions}</div> : null}
+    <div className="page-header">
+      <h1 className="page-header__title">{title}</h1>
+      {actions ? <div className="page-header__actions">{actions}</div> : null}
     </div>
   );
 }
@@ -421,7 +392,8 @@ export function Modal({
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    boxRef.current?.focus();
+    // 긴 대화상자가 열리자마자 아래로 밀려 제목이 가려지지 않게 스크롤하지 않고 초점만 옮긴다.
+    boxRef.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeRef.current();
     };
@@ -433,28 +405,22 @@ export function Modal({
   }, []);
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(17,24,39,.45)', display: 'flex', alignItems: 'flex-start',
-        justifyContent: 'center', padding: '6vh 16px', overflowY: 'auto', zIndex: 50,
-      }}
-    >
+    <div className="modal-overlay">
       <div
         ref={boxRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: width, boxShadow: '0 8px 30px rgba(0,0,0,.2)', outline: 'none' }}
+        className="modal"
+        style={{ maxWidth: width }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #eef0f3' }}>
-          <h2 id={titleId} style={{ fontSize: 17, margin: 0 }}>{title}</h2>
+        <div className="modal__header">
+          <h2 id={titleId} className="modal__title">{title}</h2>
           <Button variant="link" small onClick={onClose} aria-label={T.close}>{T.close}</Button>
         </div>
-        <div style={{ padding: '14px 18px' }}>{children}</div>
-        {footer ? (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 18px', borderTop: '1px solid #eef0f3' }}>{footer}</div>
-        ) : null}
+        <div className="modal__body">{children}</div>
+        {footer ? <div className="modal__footer">{footer}</div> : null}
       </div>
     </div>
   );
@@ -533,7 +499,7 @@ export function TempPasswordDialog({
     <Modal title={title} onClose={onClose} width={460} footer={<Button variant="primary" onClick={onClose}>{T.tempAck}</Button>}>
       {extra}
       <p style={{ fontSize: 14, margin: '0 0 6px' }}>{T.tempLoginId}: <strong>{loginId}</strong></p>
-      <label htmlFor={pwId} style={{ fontSize: 13, color: '#4b5563' }}>{T.tempPassword}</label>
+      <label htmlFor={pwId} style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{T.tempPassword}</label>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '4px 0 12px' }}>
         <input
           id={pwId}
@@ -542,7 +508,7 @@ export function TempPasswordDialog({
           onFocus={(e) => e.currentTarget.select()}
           autoComplete="off"
           spellCheck={false}
-          style={{ ...smallInput, margin: 0, fontFamily: 'ui-monospace, monospace', fontSize: 16, letterSpacing: 1 }}
+          style={{ ...smallInput, margin: 0, fontFamily: 'var(--font-mono)', fontSize: 16, letterSpacing: 1 }}
         />
         <Button
           small
@@ -558,8 +524,8 @@ export function TempPasswordDialog({
           {T.copy}
         </Button>
       </div>
-      {copied ? <p role="status" style={{ fontSize: 13, color: '#166534', margin: '0 0 8px' }}>{copied}</p> : null}
-      <div role="note" style={{ background: '#fef6e4', color: '#92400e', borderRadius: 6, padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}>
+      {copied ? <p role="status" style={{ fontSize: 13, color: 'var(--success-text)', margin: '0 0 8px' }}>{copied}</p> : null}
+      <div role="note" className="callout callout--warning">
         {T.tempOnce}
         <br />
         {T.tempValidity}

@@ -117,7 +117,7 @@ function PersonsInner() {
         title={T.title}
         actions={can('master.person', 'create') ? <Button variant="primary" onClick={() => { setNotice(''); setForm({ mode: 'create' }); }}>{T.add}</Button> : null}
       />
-      <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 10px' }}>{T.intro}</p>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>{T.intro}</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -147,9 +147,9 @@ function PersonsInner() {
           {T.includeInactive}
         </label>
       </form>
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{loadError}</ErrorText>
-      {data === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
           <Table caption={T.total(data.total)} head={[T.colEmpNo, T.colName, T.colDept, T.colEmail, T.colStatus, T.colActions]}>
@@ -256,14 +256,14 @@ function AnonymizeDialog({ person, onConfirm, onClose }: { person: PersonRow; on
         </>
       }
     >
-      <div role="alert" style={{ background: '#fdecec', color: '#991b1b', borderRadius: 6, padding: '10px 12px', fontSize: 14, lineHeight: 1.6 }}>
+      <div role="alert" style={{ background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: 6, padding: '10px 12px', fontSize: 14, lineHeight: 1.6 }}>
         <strong>{T.anonymizeWarn1(person.name)}</strong>
         <br />
         {T.anonymizeWarn2}
         <br />
         {T.anonymizeWarn3}
       </div>
-      <label htmlFor={inputId} style={{ display: 'block', fontSize: 13, color: '#4b5563', marginTop: 12 }}>{T.anonymizeType(T.anonymizeWord)}</label>
+      <label htmlFor={inputId} style={{ display: 'block', fontSize: 13, color: 'var(--text-secondary)', marginTop: 12 }}>{T.anonymizeType(T.anonymizeWord)}</label>
       <input id={inputId} style={smallInput} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
       <ErrorText>{error}</ErrorText>
     </Modal>

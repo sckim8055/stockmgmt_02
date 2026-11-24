@@ -56,15 +56,15 @@ export function AdjustDialog({
       <form onSubmit={submit}>
         <p style={{ fontSize: 14, margin: '0 0 8px' }}><strong>{T.current(stock.on_hand_qty)}</strong></p>
         {dispose ? (
-          <div role="note" style={{ background: '#fdecec', color: '#991b1b', borderRadius: 6, padding: '10px 12px', fontSize: 14, marginBottom: 12, lineHeight: 1.5 }}>
+          <div role="note" style={{ background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: 6, padding: '10px 12px', fontSize: 14, marginBottom: 12, lineHeight: 1.5 }}>
             {T.disposeWarn}
           </div>
         ) : (
-          <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 12px' }}>{T.adjustIntro}</p>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>{T.adjustIntro}</p>
         )}
         <QtyField label={dispose ? T.fQty : T.fCounted} value={qty} onChange={setQty} min={dispose ? 1 : 0} max={dispose ? stock.on_hand_qty : undefined} />
         {delta !== null ? (
-          <p role="status" style={{ fontSize: 14, margin: '-4px 0 12px', color: delta === 0 ? '#6b7280' : delta > 0 ? '#166534' : '#b91c1c' }}>
+          <p role="status" style={{ fontSize: 14, margin: '-4px 0 12px', color: delta === 0 ? 'var(--text-muted)' : delta > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
             {delta === 0 ? T.noChange : T.diff(delta, stock.on_hand_qty + delta)}
           </p>
         ) : null}

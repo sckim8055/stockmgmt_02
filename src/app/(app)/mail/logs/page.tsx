@@ -15,7 +15,7 @@ export default function MailLogsPage() {
   const T = useT(TEXT);
   return (
     <RequireCompany>
-      <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
+      <Suspense fallback={<p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>}>
         <LogsInner />
       </Suspense>
     </RequireCompany>
@@ -60,7 +60,7 @@ function LogsInner() {
     <div>
       <PageHeader title={T.title} />
       {loadError ? <Notice>{loadError}</Notice> : null}
-      {data === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
           <Table caption={T.total(data.total)} head={head}>
@@ -78,7 +78,7 @@ function LogsInner() {
                 <td style={td}>
                   <Badge tone={l.status === 'SENT' ? 'green' : 'red'}>{M.logStatus[l.status] ?? l.status}</Badge>
                 </td>
-                <td style={{ ...td, color: '#991b1b', fontSize: 13 }}>{l.error ?? T.none}</td>
+                <td style={{ ...td, color: 'var(--danger-text)', fontSize: 13 }}>{l.error ?? T.none}</td>
               </tr>
             ))}
           </Table>

@@ -21,9 +21,9 @@ function ImportInner() {
   return (
     <div>
       <PageHeader title={T.title} />
-      <section aria-label={T.rulesTitle} style={{ background: '#fff', border: '1px solid #e2e5ea', borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
+      <section aria-label={T.rulesTitle} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{T.rulesTitle}</div>
-        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#374151', lineHeight: 1.7 }}>
+        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
           {T.rules.map((r) => <li key={r}>{r}</li>)}
         </ul>
       </section>

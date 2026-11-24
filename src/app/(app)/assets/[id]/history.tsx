@@ -46,10 +46,10 @@ export function AssetHistory({ assetId, reloadKey }: { assetId: string; reloadKe
     <section aria-labelledby="asset-history-title" style={{ marginTop: 20 }}>
       <h2 id="asset-history-title" style={{ fontSize: 16, margin: '0 0 8px' }}>{T.title}</h2>
       <ErrorText>{error}</ErrorText>
-      {rows === null && !error ? <p style={{ color: '#6b7280', fontSize: 14 }}>{T.loading}</p> : null}
-      {rows && rows.length === 0 ? <p style={{ color: '#6b7280', fontSize: 14 }}>{T.empty}</p> : null}
+      {rows === null && !error ? <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>{T.loading}</p> : null}
+      {rows && rows.length === 0 ? <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>{T.empty}</p> : null}
       {rows && rows.length > 0 ? (
-        <ol style={{ listStyle: 'none', margin: 0, padding: 0, borderLeft: '2px solid #e2e5ea' }}>
+        <ol style={{ listStyle: 'none', margin: 0, padding: 0, borderLeft: '2px solid var(--border)' }}>
           {rows.map((h) => (
             <HistoryItem key={h.id} h={h} />
           ))}
@@ -82,10 +82,10 @@ function HistoryItem({ h }: { h: HistoryRow }) {
 
   return (
     <li style={{ position: 'relative', padding: '0 0 14px 16px' }}>
-      <span aria-hidden style={{ position: 'absolute', left: -6, top: 5, width: 10, height: 10, borderRadius: 5, background: '#2563eb' }} />
+      <span aria-hidden style={{ position: 'absolute', left: -6, top: 5, width: 10, height: 10, borderRadius: 5, background: 'var(--accent-blue)' }} />
       <div style={{ fontSize: 14 }}>
         <strong>{L.txn[h.type] ?? h.type}</strong>
-        <span style={{ color: '#6b7280', fontSize: 13 }}>
+        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
           {' · '}
           <time dateTime={h.created_at}>{F.dateTime(h.created_at)}</time>
           {' · '}
@@ -96,7 +96,7 @@ function HistoryItem({ h }: { h: HistoryRow }) {
         <dl style={{ margin: '4px 0 0', display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 10px', fontSize: 13 }}>
           {lines.map(([k, v]) => (
             <div key={k} style={{ display: 'contents' }}>
-              <dt style={{ color: '#6b7280' }}>{k}</dt>
+              <dt style={{ color: 'var(--text-muted)' }}>{k}</dt>
               <dd style={{ margin: 0 }}>{v}</dd>
             </div>
           ))}

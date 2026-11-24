@@ -10,7 +10,7 @@ import { TEXT } from './shared.text';
 export function FilterBox({ label, width, children }: { label: string; width?: number; children: (id: string) => ReactNode }) {
   const id = useId();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13, color: '#4b5563', width }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13, color: 'var(--text-secondary)', width }}>
       <label htmlFor={id}>{label}</label>
       {children(id)}
     </div>

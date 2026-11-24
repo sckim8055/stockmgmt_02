@@ -23,7 +23,7 @@ export default function LoansPage() {
   const T = useT(TEXT);
   return (
     <RequireCompany>
-      <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
+      <Suspense fallback={<p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>}>
         <LoansInner />
       </Suspense>
     </RequireCompany>
@@ -152,9 +152,9 @@ function LoansInner() {
         ) : null}
       </div>
 
-      {notice?.tone === 'ok' ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice.text}</p> : null}
+      {notice?.tone === 'ok' ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice.text}</p> : null}
       <ErrorText>{notice?.tone === 'error' ? notice.text : loadError}</ErrorText>
-      {data === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
           <Table caption={T.total(data.total)} head={head}>
@@ -204,7 +204,7 @@ function LoanTableRow({
   const T = useT(TEXT);
   const open = l.status === 'OPEN';
   return (
-    <tr style={l.overdue ? { background: '#fff5f5' } : undefined}>
+    <tr style={l.overdue ? { background: 'var(--danger-row-bg)' } : undefined}>
       <td style={td}>
         {l.person_name}
         {l.person_active ? null : <> <Badge tone="gray">{T.personLeft}</Badge></>}
@@ -214,10 +214,10 @@ function LoanTableRow({
       <td style={{ ...td, textAlign: 'right' }}>{F.num(l.qty)}</td>
       <td style={{ ...td, textAlign: 'right' }}>
         {F.num(l.outstanding_qty)}
-        {l.returned_qty > 0 || l.lost_qty > 0 ? <div style={{ color: '#6b7280', fontSize: 12 }}>{T.breakdown(l.returned_qty, l.lost_qty)}</div> : null}
+        {l.returned_qty > 0 || l.lost_qty > 0 ? <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>{T.breakdown(l.returned_qty, l.lost_qty)}</div> : null}
       </td>
       <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={l.loaned_at} title={F.dateTime(l.loaned_at)}>{F.date(l.loaned_at)}</time></td>
-      <td style={{ ...td, whiteSpace: 'nowrap', color: l.overdue ? '#991b1b' : undefined, fontWeight: l.overdue ? 600 : undefined }}>
+      <td style={{ ...td, whiteSpace: 'nowrap', color: l.overdue ? 'var(--danger-text)' : undefined, fontWeight: l.overdue ? 600 : undefined }}>
         {l.due_date ?? ''}
         {l.overdue ? <> <Badge tone="red">{T.overdue}</Badge></> : null}
       </td>

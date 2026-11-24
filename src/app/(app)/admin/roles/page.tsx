@@ -130,11 +130,11 @@ function RolesInner() {
           ) : null
         }
       />
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{loadError}</ErrorText>
       <ErrorText>{resourceError}</ErrorText>
 
-      {roles === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {roles === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {roles ? (
         <Table head={[T.colName, T.colDesc, T.colStatus, T.colUsers, T.colActions]}>
           {roles.length === 0 ? <EmptyRow colSpan={5}>{T.empty}</EmptyRow> : null}
@@ -144,7 +144,7 @@ function RolesInner() {
             return (
               <tr key={role.id}>
                 <td style={td}>{role.name}</td>
-                <td style={{ ...td, color: '#4b5563' }}>{role.description ?? ''}</td>
+                <td style={{ ...td, color: 'var(--text-secondary)' }}>{role.description ?? ''}</td>
                 <td style={td}>{role.is_active ? <Badge tone="green">{T.active}</Badge> : <Badge tone="gray">{T.inactive}</Badge>}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{role.user_count}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
@@ -274,7 +274,7 @@ function RoleForm({
         <th scope="row" style={{ ...td, textAlign: 'left', fontWeight: depth === 1 ? 500 : 400, paddingLeft: depth === 1 ? 18 : 38, whiteSpace: 'nowrap' }}>
           {depth === 2 ? '└ ' : ''}
           {rowName}
-          <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>{r.code}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>{r.code}</div>
         </th>
         <td style={{ ...td, textAlign: 'center' }}>
           {r.operations.length ? (
@@ -319,11 +319,11 @@ function RoleForm({
         </div>
 
         <h3 style={{ fontSize: 15, margin: '4px 0 4px' }}>{T.fMatrix}</h3>
-        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>{perms.all ? T.fMatrixHintAll : T.fMatrixHint}</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 8px' }}>{perms.all ? T.fMatrixHintAll : T.fMatrixHint}</p>
         {hasForeign ? <Notice>{T.fNotMineWarn}</Notice> : null}
 
-        <div style={{ maxHeight: '55vh', overflow: 'auto', border: '1px solid #e2e5ea' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff' }}>
+        <div style={{ maxHeight: '55vh', overflow: 'auto', border: '1px solid var(--border)' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: 'var(--surface)' }}>
             <thead>
               <tr>
                 <th scope="col" style={{ ...th, position: 'sticky', top: 0 }}>{T.colResource}</th>
@@ -337,7 +337,7 @@ function RoleForm({
               {tree.map((g) => (
                 <Fragment key={g.menu?.code ?? '__other'}>
                   <tr>
-                    <th scope="rowgroup" colSpan={OPERATIONS.length + 2} style={{ ...td, textAlign: 'left', background: '#f7f8fa', fontWeight: 700 }}>
+                    <th scope="rowgroup" colSpan={OPERATIONS.length + 2} style={{ ...td, textAlign: 'left', background: 'var(--surface-2)', fontWeight: 700 }}>
                       {g.menu ? RL.label(g.menu.code) : T.other}
                     </th>
                   </tr>

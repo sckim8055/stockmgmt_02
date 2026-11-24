@@ -59,7 +59,7 @@ export function IssueDialog({
 
   return (
     <Modal title={`${T.title[action]} — ${stockLabel(stock)}`} onClose={onClose} width={480}>
-      <p style={{ fontSize: 14, margin: '0 0 12px', color: '#374151' }}>
+      <p style={{ fontSize: 14, margin: '0 0 12px', color: 'var(--text-secondary)' }}>
         {T.intro[action]} <strong>{T.available(stock.on_hand_qty)}</strong>
       </p>
       {canPickPerson ? (

@@ -84,9 +84,9 @@ function CategoriesInner() {
           {T.includeInactive}
         </label>
       </div>
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{loadError}</ErrorText>
-      {rows === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {rows === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {rows ? (
         <Table head={[T.colName, T.colKind, T.colNameKo, T.colNameZh, T.colSort, T.colModels, T.colStatus, T.colActions]}>
           {rows.length === 0 ? <EmptyRow colSpan={8}>{T.empty}</EmptyRow> : null}

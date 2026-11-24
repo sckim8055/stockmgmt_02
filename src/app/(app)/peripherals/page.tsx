@@ -30,7 +30,7 @@ export default function PeripheralsPage() {
   return (
     <RequireCompany>
       {/* useSearchParams 는 Suspense 경계 안에서 써야 한다(Next.js 빌드 규칙). */}
-      <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
+      <Suspense fallback={<p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>}>
         <StockInner />
       </Suspense>
     </RequireCompany>
@@ -171,9 +171,9 @@ function StockInner() {
         ) : null}
       </div>
 
-      {notice?.tone === 'ok' ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice.text}</p> : null}
+      {notice?.tone === 'ok' ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice.text}</p> : null}
       <ErrorText>{notice?.tone === 'error' ? notice.text : loadError}</ErrorText>
-      {data === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
           <Table caption={T.total(data.total)} head={head}>
@@ -183,7 +183,7 @@ function StockInner() {
                 <td style={td}>{s.category_name}</td>
                 <td style={td}>
                   {modelLabel({ manufacturer: s.manufacturer, name: s.model_name })}
-                  {s.model_active ? null : <span style={{ color: '#6b7280', fontSize: 12 }}> {T.inactive}</span>}
+                  {s.model_active ? null : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> {T.inactive}</span>}
                 </td>
                 <td style={td}>{s.department_name}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{F.num(s.on_hand_qty)}</td>

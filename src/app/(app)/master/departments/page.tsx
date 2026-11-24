@@ -64,10 +64,10 @@ function DepartmentsInner() {
         actions={allowed('create') ? <Button variant="primary" onClick={() => { setNotice(''); setForm({ mode: 'create' }); }}>{T.add}</Button> : null}
       />
       {scoped ? <Notice>{T.scopedNote}</Notice> : null}
-      <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 10px' }}>{T.defaultNote}</p>
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>{T.defaultNote}</p>
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{loadError}</ErrorText>
-      {rows === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {rows === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {rows ? (
         <Table head={[T.colName, T.colStatus, T.colActions]}>
           {rows.length === 0 ? <EmptyRow colSpan={3}>{T.empty}</EmptyRow> : null}

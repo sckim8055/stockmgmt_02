@@ -60,7 +60,7 @@ function CompaniesInner() {
     <div>
       <PageHeader title={T.title} actions={<Button variant="primary" onClick={() => setFormOpen(true)}>{T.add}</Button>} />
       <ErrorText>{loadError}</ErrorText>
-      {companies === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {companies === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {companies ? (
         <Table head={[T.colCode, T.colName, T.colTz, T.colLocale, T.colStatus, T.colCreated]}>
           {companies.length === 0 ? <EmptyRow colSpan={6}>{T.empty}</EmptyRow> : null}
@@ -156,8 +156,8 @@ function CompanyForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
           )}
         </LabeledField>
 
-        <fieldset style={{ border: '1px solid #e2e5ea', borderRadius: 6, padding: '8px 12px 0', margin: '4px 0 12px' }}>
-          <legend style={{ fontSize: 13, color: '#4b5563', padding: '0 4px' }}>{T.adminSection}</legend>
+        <fieldset style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px 0', margin: '4px 0 12px' }}>
+          <legend style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 4px' }}>{T.adminSection}</legend>
           <LabeledField label={T.fAdminLogin} hint={T.fAdminLoginHint}>
             {(id) => <input id={id} style={smallInput} value={adminLogin} onChange={(e) => setAdminLogin(e.target.value)} required minLength={3} maxLength={64} autoComplete="off" />}
           </LabeledField>

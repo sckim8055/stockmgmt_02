@@ -150,10 +150,10 @@ function UsersInner() {
           ) : null
         }
       />
-      {notice ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice}</p> : null}
+      {notice ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice}</p> : null}
       <ErrorText>{loadError}</ErrorText>
 
-      {users === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {users === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {users ? (
         <Table head={[T.colLogin, T.colName, T.colType, T.colRoles, T.colScope, T.colStatus, T.colActions]}>
           {users.length === 0 ? <EmptyRow colSpan={7}>{T.empty}</EmptyRow> : null}
@@ -163,11 +163,11 @@ function UsersInner() {
             return (
               <tr key={u.id}>
                 <td style={td}>
-                  {u.login_id} {self ? <span style={{ color: '#6b7280', fontSize: 12 }}>{T.me}</span> : null}
+                  {u.login_id} {self ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{T.me}</span> : null}
                 </td>
                 <td style={td}>
                   {u.display_name}
-                  {u.email ? <div style={{ fontSize: 12, color: '#6b7280' }}>{u.email}</div> : null}
+                  {u.email ? <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.email}</div> : null}
                 </td>
                 <td style={td}>{UTL[u.user_type] ?? u.user_type}</td>
                 <td style={td}>
@@ -426,7 +426,7 @@ function UserForm({
                 <option value="COMPANY_ADMIN">{UTL.COMPANY_ADMIN}</option>
               </select>
             ) : (
-              <input id={id} style={{ ...smallInput, background: '#f5f6f8' }} value={UTL[userType]} readOnly />
+              <input id={id} style={{ ...smallInput, background: 'var(--surface-2)' }} value={UTL[userType]} readOnly />
             )
           }
         </LabeledField>
@@ -437,16 +437,16 @@ function UserForm({
         {showAccess ? (
           <>
             {roles === null ? (
-              <p style={{ fontSize: 13, color: '#6b7280' }}>{T.loading}</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{T.loading}</p>
             ) : roles.unavailable ? (
-              <p style={{ fontSize: 13, color: '#6b7280' }}>{roles.message}</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{roles.message}</p>
             ) : (
               <CheckboxList legend={T.fRoles} options={roleOptions} selected={roleIds} onChange={setRoleIds} emptyText={T.fRolesEmpty} />
             )}
             {departments === null ? (
-              <p style={{ fontSize: 13, color: '#6b7280' }}>{T.loading}</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{T.loading}</p>
             ) : departments.unavailable ? (
-              <p style={{ fontSize: 13, color: '#6b7280' }}>{departments.message}</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{departments.message}</p>
             ) : (
               <CheckboxList
                 legend={T.fScope}

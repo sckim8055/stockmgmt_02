@@ -52,11 +52,11 @@ export function LoanDialog({
           <strong>{T.summary(loan.person_name, `${loan.manufacturer} ${loan.model_name}`, loan.outstanding_qty)}</strong>
         </p>
         {loss ? (
-          <div role="note" style={{ background: '#fdecec', color: '#991b1b', borderRadius: 6, padding: '10px 12px', fontSize: 14, marginBottom: 12, lineHeight: 1.5 }}>
+          <div role="note" style={{ background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: 6, padding: '10px 12px', fontSize: 14, marginBottom: 12, lineHeight: 1.5 }}>
             {T.lossWarn}
           </div>
         ) : (
-          <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 12px' }}>{T.returnIntro}</p>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>{T.returnIntro}</p>
         )}
         <QtyField label={T.fQty[action]} value={qty} onChange={setQty} min={1} max={loan.outstanding_qty} />
         <NoteField label={T.fNote[action]} value={note} onChange={setNote} />

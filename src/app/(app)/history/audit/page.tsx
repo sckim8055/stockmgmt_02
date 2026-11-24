@@ -27,7 +27,7 @@ export default function AuditPage() {
   const T = useT(TEXT);
   return (
     <RequireCompany>
-      <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
+      <Suspense fallback={<p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>}>
         <AuditInner />
       </Suspense>
     </RequireCompany>
@@ -173,11 +173,11 @@ function AuditInner() {
           </div>
         ) : null}
       </div>
-      {actionInvalid ? <p role="alert" style={{ fontSize: 12, color: '#b91c1c', margin: '0 0 4px' }}>{T.actionInvalid}</p> : null}
+      {actionInvalid ? <p role="alert" style={{ fontSize: 12, color: 'var(--danger-text)', margin: '0 0 4px' }}>{T.actionInvalid}</p> : null}
       <RangeHint invalid={range.invalid} />
 
       <ErrorText>{loadError?.message}</ErrorText>
-      {data === null && !loadError && !range.invalid ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError && !range.invalid ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
           <Table head={head}>
@@ -192,16 +192,16 @@ function AuditInner() {
                     <td style={{ ...td, whiteSpace: 'nowrap' }}><time dateTime={a.created_at}>{F.dateTime(a.created_at)}</time></td>
                     <td style={td}>
                       {HL.action[a.action] ?? a.action}
-                      {HL.action[a.action] ? <div style={{ color: '#6b7280', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>{a.action}</div> : null}
+                      {HL.action[a.action] ? <div style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>{a.action}</div> : null}
                     </td>
                     <td style={td}>
                       {RL.auditLabel(a.resource)}
-                      <div style={{ color: '#6b7280', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>{a.resource}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>{a.resource}</div>
                     </td>
                     <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12, wordBreak: 'break-all' }}>{a.target_id ?? ''}</td>
                     <td style={td}>
                       {a.actor_id === null ? T.systemActor : a.actor_name === null ? T.outsideActor : a.actor_name}
-                      {a.actor_login ? <div style={{ color: '#6b7280', fontSize: 12 }}>{a.actor_login}</div> : null}
+                      {a.actor_login ? <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>{a.actor_login}</div> : null}
                     </td>
                     <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{a.ip ?? ''}</td>
                     <td style={td}>
@@ -214,7 +214,7 @@ function AuditInner() {
                   </tr>
                   {hasDetail && expanded ? (
                     <tr id={detailId}>
-                      <td colSpan={head.length} style={{ ...td, background: '#f7f8fa' }}>
+                      <td colSpan={head.length} style={{ ...td, background: 'var(--surface-2)' }}>
                         <div role="region" aria-label={T.detailLabel(a.action)} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                           <JsonBlock title={T.before} value={a.before} empty={T.noValue} />
                           <JsonBlock title={T.after} value={a.after} empty={T.noValue} />
@@ -237,8 +237,8 @@ function AuditInner() {
 function JsonBlock({ title, value, empty }: { title: string; value: unknown; empty: string }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#4b5563', marginBottom: 4 }}>{title}</div>
-      <pre style={{ margin: 0, padding: '8px 10px', background: '#fff', border: '1px solid #e2e5ea', borderRadius: 6, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflow: 'auto' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>{title}</div>
+      <pre style={{ margin: 0, padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflow: 'auto' }}>
         {value == null ? empty : JSON.stringify(value, null, 2)}
       </pre>
     </div>

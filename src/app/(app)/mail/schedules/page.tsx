@@ -79,25 +79,25 @@ function SchedulesInner() {
         title={T.title}
         actions={can('mail.schedule', 'create') ? <Button variant="primary" onClick={() => { setNotice(null); setDialog({ kind: 'create' }); }}>{T.add}</Button> : null}
       />
-      <div role="note" style={{ background: '#fef6e4', border: '1px solid #f5d58a', color: '#92400e', borderRadius: 6, padding: '12px 14px', fontSize: 14, marginBottom: 12 }}>
+      <div role="note" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', color: 'var(--warning-text)', borderRadius: 6, padding: '12px 14px', fontSize: 14, marginBottom: 12 }}>
         <strong style={{ display: 'block', marginBottom: 2 }}>{T.noticeTitle}</strong>
         {M.sendingDisabled}
       </div>
-      {perms.departmentScope !== null ? <p style={{ fontSize: 13, color: '#4b5563' }}>{T.scopedNote}</p> : null}
-      {notice?.tone === 'ok' ? <p role="status" style={{ color: '#166534', fontSize: 14 }}>{notice.text}</p> : null}
+      {perms.departmentScope !== null ? <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{T.scopedNote}</p> : null}
+      {notice?.tone === 'ok' ? <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>{notice.text}</p> : null}
       <ErrorText>{notice?.tone === 'error' ? notice.text : loadError}</ErrorText>
-      {rows === null && !loadError ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {rows === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {rows ? (
         <Table caption={T.total(rows.length)} head={head}>
           {rows.length === 0 ? <EmptyRow colSpan={head.length}>{T.empty}</EmptyRow> : null}
           {rows.map((s) => (
-            <tr key={s.id} style={s.is_active ? undefined : { color: '#4b5563' }}>
+            <tr key={s.id} style={s.is_active ? undefined : { color: 'var(--text-secondary)' }}>
               <td style={td}>{s.name}</td>
               <td style={td}>{M.content[s.content_type] ?? s.content_type}</td>
               <td style={td}>{s.department_name ?? T.all}</td>
               <td style={td}>
                 {frequencyPhrase(M, s)}
-                <div style={{ fontSize: 12, color: '#6b7280' }}>{M.timezone[s.timezone] ?? s.timezone}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{M.timezone[s.timezone] ?? s.timezone}</div>
               </td>
               <td style={{ ...td, textAlign: 'right' }}>{T.people(s.recipients.length)}</td>
               <td style={td}>{s.is_active ? <Badge tone="green">{T.on}</Badge> : <Badge tone="gray">{T.off}</Badge>}</td>
@@ -105,7 +105,7 @@ function SchedulesInner() {
                 {s.is_active && s.next_run_at ? (
                   <>
                     <time dateTime={s.next_run_at}>{F.dateTime(s.next_run_at)}</time>
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>{T.nextNote}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.nextNote}</div>
                   </>
                 ) : T.none}
               </td>

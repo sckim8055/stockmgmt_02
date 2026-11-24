@@ -27,7 +27,7 @@ export function draftFromRecipients(list: ScheduleRecipient[]): RecipientDraft {
   };
 }
 
-const chip = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 4px 2px 9px', borderRadius: 12, background: '#eef0f3', fontSize: 13, margin: '0 6px 6px 0' } as const;
+const chip = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 4px 2px 9px', borderRadius: 12, background: 'var(--surface-2)', fontSize: 13, margin: '0 6px 6px 0' } as const;
 
 export function RecipientsField({
   accounts,
@@ -79,7 +79,7 @@ export function RecipientsField({
       <>
         <Notice>{T.accountsDenied}</Notice>
         {value.userIds.length > 0 ? (
-          <div style={{ fontSize: 13, color: '#4b5563', marginBottom: 8 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
             <div style={{ marginBottom: 4 }}>{T.current}</div>
             {value.userIds.map((id) => (
               <span key={id} style={chip}>
@@ -92,7 +92,7 @@ export function RecipientsField({
       </>
     );
   } else if (accounts === null) {
-    accountPart = <p style={{ fontSize: 13, color: '#6b7280' }}>{T.accountsLoading}</p>;
+    accountPart = <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{T.accountsLoading}</p>;
   } else {
     const eligible = accounts.filter((a) => a.is_active && a.email);
     const eligibleIds = new Set(eligible.map((a) => a.id));
@@ -110,7 +110,7 @@ export function RecipientsField({
     accountPart = (
       <>
         {eligible.length > 8 ? (
-          <div style={{ fontSize: 13, color: '#4b5563' }}>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
             <label htmlFor={filterId}>{T.filter}</label>
             <input id={filterId} type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={T.filterPlaceholder} autoComplete="off" style={{ ...smallInput, margin: '4px 0 4px' }} />
           </div>
@@ -128,12 +128,12 @@ export function RecipientsField({
   }
 
   return (
-    <fieldset style={{ border: '1px solid #e2e5ea', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
-      <legend style={{ fontSize: 13, color: '#4b5563', padding: '0 4px' }}>
-        {T.legend} <span style={{ color: full ? '#b91c1c' : '#6b7280' }}>({T.count(total)})</span>
+    <fieldset style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
+      <legend style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 4px' }}>
+        {T.legend} <span style={{ color: full ? 'var(--danger-text)' : 'var(--text-muted)' }}>({T.count(total)})</span>
       </legend>
       {accountPart}
-      <div style={{ fontSize: 13, color: '#4b5563' }}>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
         <label htmlFor={emailId}>{T.emails}</label>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0 6px' }}>
           <input

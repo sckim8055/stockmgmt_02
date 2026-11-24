@@ -25,7 +25,7 @@ export default function StockHistoryPage() {
   return (
     <RequireCompany>
       {/* useSearchParams 는 Suspense 경계 안에서 써야 한다(Next.js 빌드 규칙). */}
-      <Suspense fallback={<p style={{ color: '#6b7280' }}>{T.loading}</p>}>
+      <Suspense fallback={<p style={{ color: 'var(--text-muted)' }}>{T.loading}</p>}>
         <StockHistoryInner />
       </Suspense>
     </RequireCompany>
@@ -149,10 +149,10 @@ function StockHistoryInner() {
       <RangeHint invalid={range.invalid} />
 
       <ErrorText>{loadError}</ErrorText>
-      {data === null && !loadError && !range.invalid ? <p style={{ color: '#6b7280' }}>{T.loading}</p> : null}
+      {data === null && !loadError && !range.invalid ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
-          <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 6px' }}>{T.qtyHint}</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 6px' }}>{T.qtyHint}</p>
           <Table head={head}>
             {items.length === 0 ? <EmptyRow colSpan={head.length}>{T.empty}</EmptyRow> : null}
             {items.map((h) => (
@@ -164,14 +164,14 @@ function StockHistoryInner() {
                   {h.kind === 'ASSET' ? (
                     <>
                       {canAsset && h.ref_label ? <Link href={`/assets/${encodeURIComponent(h.ref_id)}`}>{h.ref_label}</Link> : h.ref_label}
-                      <div style={{ color: '#6b7280', fontSize: 12 }}>{`${h.manufacturer} ${h.model_name}`}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>{`${h.manufacturer} ${h.model_name}`}</div>
                     </>
                   ) : (
                     `${h.manufacturer} ${h.model_name}`
                   )}
                 </td>
                 <td style={td}>{h.department_name}</td>
-                <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: h.qty !== null && h.qty < 0 ? '#b91c1c' : '#166534' }}>
+                <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: h.qty !== null && h.qty < 0 ? 'var(--danger-text)' : 'var(--success-text)' }}>
                   {h.kind === 'PERIPHERAL' && h.qty !== null ? F.signed(h.qty) : ''}
                 </td>
                 <td style={td}>{arrow(h.from_person, h.to_person, T.none)}</td>

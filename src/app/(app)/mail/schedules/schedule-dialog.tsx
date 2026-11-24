@@ -31,8 +31,8 @@ function DayGrid({ legend, hint, values, labelOf, selected, onChange, columns }:
 }) {
   const set = new Set(selected);
   return (
-    <fieldset style={{ border: '1px solid #e2e5ea', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
-      <legend style={{ fontSize: 13, color: '#4b5563', padding: '0 4px' }}>{legend}</legend>
+    <fieldset style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', margin: '4px 0 12px' }}>
+      <legend style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 4px' }}>{legend}</legend>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 4 }}>
         {values.map((d) => (
           <label key={d} style={{ fontSize: 14, display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -45,7 +45,7 @@ function DayGrid({ legend, hint, values, labelOf, selected, onChange, columns }:
           </label>
         ))}
       </div>
-      {hint ? <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>{hint}</div> : null}
+      {hint ? <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>{hint}</div> : null}
     </fieldset>
   );
 }
@@ -159,14 +159,14 @@ export function ScheduleDialog({ schedule, onClose, onDone }: { schedule: Schedu
             </LabeledField>
           )
         ) : (
-          <div style={{ fontSize: 13, color: '#4b5563', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
             {T.fDept}
-            <div style={{ fontSize: 14, color: '#1f2937', marginTop: 4 }}>{T.deptFixed(schedule.department_name ?? T.all)}</div>
+            <div style={{ fontSize: 14, color: 'var(--text-primary)', marginTop: 4 }}>{T.deptFixed(schedule.department_name ?? T.all)}</div>
           </div>
         )}
 
         <fieldset style={{ border: 0, padding: 0, margin: '0 0 8px', fontSize: 14 }}>
-          <legend style={{ fontSize: 13, color: '#4b5563', padding: 0, marginBottom: 4 }}>{T.fFrequency}</legend>
+          <legend style={{ fontSize: 13, color: 'var(--text-secondary)', padding: 0, marginBottom: 4 }}>{T.fFrequency}</legend>
           {FREQUENCIES.map((f) => (
             <label key={f} style={{ marginRight: 16 }}>
               <input type="radio" name="frequency" value={f} checked={frequency === f} onChange={() => setFrequency(f)} /> {M.frequency[f]}
@@ -202,10 +202,10 @@ export function ScheduleDialog({ schedule, onClose, onDone }: { schedule: Schedu
           <input type="checkbox" checked={skipIfEmpty} onChange={(e) => setSkipIfEmpty(e.target.checked)} />
           {T.fSkip}
         </label>
-        <div style={{ fontSize: 12, color: '#6b7280', margin: '2px 0 12px' }}>{T.fSkipHint}</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '2px 0 12px' }}>{T.fSkipHint}</div>
 
         <RecipientsField accounts={accounts} initial={schedule?.recipients ?? []} value={recipients} onChange={setRecipients} />
-        {creating ? <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>{T.createdOff}</p> : null}
+        {creating ? <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 8px' }}>{T.createdOff}</p> : null}
         <ErrorText>{error}</ErrorText>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Button onClick={onClose} disabled={busy}>{T.cancel}</Button>

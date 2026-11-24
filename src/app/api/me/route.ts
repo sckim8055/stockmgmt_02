@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
 
@@ -26,4 +27,18 @@ export const GET = route({ access: 'self' }, async ({ user, tenant }) => {
       mustChangePassword: user.mustChangePassword,
     },
   });
+});
+
+const Body = z.strictObject({ lang: z.enum(['ko', 'en', 'zh']) });
+
+// 자기 화면 언어를 바꾼다. 바꿀 수 있는 것은 언어뿐이다(이름·권한 등은 계정 관리에서만).
+// 기업에 속한 계정만 저장된다. 시스템 관리자는 기업 문맥 밖의 계정이라 여기서 저장하지 않고(saved: false) 브라우저에만 남는다.
+export const PATCH = route({ access: 'self', body: Body }, async ({ body, user, tenant }) => {
+  if (!user.companyId) return json({ saved: false });
+  const companyId = user.companyId;
+  const updated = await tenant(async (db) => {
+    const r = await db.query('UPDATE app.app_user SET lang = $1 WHERE id = $2 AND company_id = $3', [body.lang, user.userId, companyId]);
+    return r.rowCount ?? 0;
+  });
+  return json({ saved: updated === 1 });
 });

@@ -201,3 +201,21 @@ describe('감사 로그', () => {
     expect((await call(auditRoute)).status).toBe(401);
   });
 });
+
+describe('자기 화면 언어', () => {
+  it('자기 언어만 바꿀 수 있고, 다른 항목은 받지 않는다', async () => {
+    const { GET: meGet, PATCH: mePatch } = await import('@/app/api/me/route');
+    const patch = (as: string, body: Record<string, unknown>) => call(mePatch as Handler, { method: 'PATCH', cookie: cookie[as], body });
+    expect((await patch('viewer', { lang: 'zh' })).data).toEqual({ saved: true });
+    expect((await call(meGet as Handler, { cookie: cookie.viewer })).data.user.lang).toBe('zh');
+    const o = await owner();
+    const others = (await o.query("SELECT count(*)::int AS n FROM app.app_user WHERE company_id = $1 AND lang = 'zh'", [A.id])).rows[0].n;
+    expect(others).toBe(1);
+    for (const body of [{ lang: 'fr' }, { lang: 'en', userType: 'COMPANY_ADMIN' }, { lang: 'en', displayName: 'x' }, {}]) {
+      expect((await patch('viewer', body)).status).toBe(400);
+    }
+    expect((await call(mePatch as Handler, { method: 'PATCH', body: { lang: 'en' } })).status).toBe(401);
+    // 요청 위조 방지: 다른 사이트에서 온 요청은 받지 않는다.
+    expect((await call(mePatch as Handler, { method: 'PATCH', cookie: cookie.viewer, body: { lang: 'en' }, headers: { origin: 'http://evil.test' } })).status).toBe(403);
+  });
+});

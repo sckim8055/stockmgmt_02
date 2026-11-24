@@ -88,6 +88,7 @@ describe('라우트별 권한 선언', () => {
         "PATCH /master/custom-fields/[id]": "master.custom_field:update",
         "PATCH /master/models/[id]": "master.model:update",
         "PATCH /master/persons/[id]": "master.person:update",
+        "PATCH /me": "self",
         "PATCH /thresholds/[id]": "threshold:update",
         "POST /admin/roles": "admin.role:create",
         "POST /admin/users": "admin.user:create",

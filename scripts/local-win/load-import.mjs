@@ -150,8 +150,14 @@ async function loadCompany(sys, entry) {
   return true;
 }
 
+// Make sure it is THIS app that answers (another project may be listening on the same port): nothing is sent before this passes.
 const probe = await fetch(BASE + '/login').catch(() => null);
 if (!probe?.ok) throw new Error(`The app is not running at ${BASE}. Start it with start.cmd first, and leave that window open.`);
+const me = await fetch(BASE + '/api/me').catch(() => null);
+const meBody = me ? await me.json().catch(() => null) : null;
+if (!(await probe.text()).includes('StockMgmt') || me?.status !== 401 || !meBody?.error?.code) {
+  throw new Error(`Something else is answering at ${BASE}; it is not StockMgmt. Nothing was sent. Close the other program or start this app with start.cmd.`);
+}
 const manifest = JSON.parse(readFileSync(path.join(IMPORT_DIR, 'load.json'), 'utf8'));
 console.log('== system administrator');
 const sys = await systemSession();

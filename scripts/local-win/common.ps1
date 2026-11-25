@@ -16,7 +16,8 @@ $DataRoot = Join-Path $WorksDir 'stockmgmt_data'
 $PgData   = Join-Path $DataRoot 'pg16'
 $SecretDir = Join-Path $DataRoot 'secrets'
 $PgPort   = 5433
-$AppPort  = 3000
+# 3000 is the default of many dev servers, so another project can easily take it. Use a port of our own.
+$AppPort  = 3210
 $DbName   = 'stockmgmt'
 
 function Say([string]$msg) { Write-Host ''; Write-Host "== $msg" -ForegroundColor Cyan }

@@ -19,6 +19,9 @@ export interface StockRow {
   updated_at: string;
 }
 
+/** 서버가 받는 정렬 기준. src/lib/peripherals/peripherals.ts 의 STOCK_SORT_KEYS 와 같아야 한다. */
+export const STOCK_SORT_KEYS = ['category', 'manufacturer', 'model', 'department', 'on_hand', 'on_loan', 'updated_at'] as const;
+
 export interface StockPage {
   total: number;
   page: number;

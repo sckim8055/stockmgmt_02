@@ -31,17 +31,50 @@ const SQL_STOCK_FROM =
   ' JOIN app.category c ON c.id = m.category_id AND c.company_id = s.company_id' +
   ' JOIN app.department d ON d.id = s.department_id AND d.company_id = s.company_id' +
   ' WHERE s.company_id = $1 AND ($2::uuid[] IS NULL OR s.department_id = ANY($2))';
+// $6 = 전체 필드 검색(카테고리·제조사·모델·관리 부서). $7~$10 = 열별 "포함" 조건(LIKE 패턴 배열, 모두 맞아야 한다. 빈 배열 = 조건 없음).
 const SQL_STOCK_FILTERS =
   ' AND ($3::uuid IS NULL OR s.model_id = $3)' +
   ' AND ($4::uuid IS NULL OR m.category_id = $4)' +
   ' AND ($5::uuid IS NULL OR s.department_id = $5)' +
-  ' AND ($6::text IS NULL OR m.name ILIKE $6 OR m.manufacturer ILIKE $6 OR c.name ILIKE $6)';
+  ' AND ($6::text IS NULL OR m.name ILIKE $6 OR m.manufacturer ILIKE $6 OR c.name ILIKE $6 OR d.name ILIKE $6)' +
+  ' AND (cardinality($7::text[]) = 0 OR c.name ILIKE ALL($7::text[]))' +
+  ' AND (cardinality($8::text[]) = 0 OR m.manufacturer ILIKE ALL($8::text[]))' +
+  ' AND (cardinality($9::text[]) = 0 OR m.name ILIKE ALL($9::text[]))' +
+  ' AND (cardinality($10::text[]) = 0 OR d.name ILIKE ALL($10::text[]))';
 const SQL_STOCK_COLUMNS =
   'SELECT s.id, s.model_id, m.manufacturer, m.name AS model_name, m.is_active AS model_active, m.category_id, c.name AS category_name,' +
   ' s.department_id, d.name AS department_name, s.on_hand_qty, s.on_loan_qty, s.updated_at';
 const SQL_STOCK_COUNT = 'SELECT count(*)::int AS n' + SQL_STOCK_FROM + SQL_STOCK_FILTERS;
-const SQL_STOCK_PAGE =
-  SQL_STOCK_COLUMNS + SQL_STOCK_FROM + SQL_STOCK_FILTERS + ' ORDER BY lower(c.name), lower(m.manufacturer), lower(m.name), lower(d.name), s.id LIMIT $7 OFFSET $8';
+const SQL_STOCK_BASE = SQL_STOCK_COLUMNS + SQL_STOCK_FROM + SQL_STOCK_FILTERS;
+// 같은 값끼리는 (카테고리, 제조사, 모델, 부서)로 순서를 정한다. 재고 행은 (모델, 부서)마다 하나라 이 순서와 s.id 로 쪽 넘김이 안정된다.
+const SQL_STOCK_TIE = ', lower(c.name), lower(m.manufacturer), lower(m.name), lower(d.name), s.id LIMIT $11 OFFSET $12';
+// 정렬은 이 목록에 있는 것만 허용한다. 입력값이 SQL 에 들어가지 않는다.
+const SQL_STOCK_PAGE_BY: Record<string, string> = {
+  'category:asc': SQL_STOCK_BASE + ' ORDER BY lower(c.name) ASC' + SQL_STOCK_TIE,
+  'category:desc': SQL_STOCK_BASE + ' ORDER BY lower(c.name) DESC' + SQL_STOCK_TIE,
+  'manufacturer:asc': SQL_STOCK_BASE + ' ORDER BY lower(m.manufacturer) ASC' + SQL_STOCK_TIE,
+  'manufacturer:desc': SQL_STOCK_BASE + ' ORDER BY lower(m.manufacturer) DESC' + SQL_STOCK_TIE,
+  'model:asc': SQL_STOCK_BASE + ' ORDER BY lower(m.name) ASC' + SQL_STOCK_TIE,
+  'model:desc': SQL_STOCK_BASE + ' ORDER BY lower(m.name) DESC' + SQL_STOCK_TIE,
+  'department:asc': SQL_STOCK_BASE + ' ORDER BY lower(d.name) ASC' + SQL_STOCK_TIE,
+  'department:desc': SQL_STOCK_BASE + ' ORDER BY lower(d.name) DESC' + SQL_STOCK_TIE,
+  'on_hand:asc': SQL_STOCK_BASE + ' ORDER BY s.on_hand_qty ASC' + SQL_STOCK_TIE,
+  'on_hand:desc': SQL_STOCK_BASE + ' ORDER BY s.on_hand_qty DESC' + SQL_STOCK_TIE,
+  'on_loan:asc': SQL_STOCK_BASE + ' ORDER BY s.on_loan_qty ASC' + SQL_STOCK_TIE,
+  'on_loan:desc': SQL_STOCK_BASE + ' ORDER BY s.on_loan_qty DESC' + SQL_STOCK_TIE,
+  'updated_at:asc': SQL_STOCK_BASE + ' ORDER BY s.updated_at ASC' + SQL_STOCK_TIE,
+  'updated_at:desc': SQL_STOCK_BASE + ' ORDER BY s.updated_at DESC' + SQL_STOCK_TIE,
+};
+export const STOCK_SORT_KEYS = ['category', 'manufacturer', 'model', 'department', 'on_hand', 'on_loan', 'updated_at'] as const;
+export type StockSortKey = (typeof STOCK_SORT_KEYS)[number];
+/**
+ * 글자로 검색·거를 수 있는 열. 값은 SQL_STOCK_FILTERS 의 매개변수 번호와 짝이다.
+ * 열 필터 매개변수 이름은 `f_<열>`(예: f_model=M1), qField 도 같은 이름을 쓴다(qField=all 이 기본).
+ */
+export const STOCK_FILTER_SLOTS = { category: 7, manufacturer: 8, model: 9, department: 10 } as const;
+export type StockTextField = keyof typeof STOCK_FILTER_SLOTS;
+export const STOCK_TEXT_FIELDS = Object.keys(STOCK_FILTER_SLOTS) as StockTextField[];
+
 const SQL_STOCK_LOCK =
   'SELECT s.id, s.model_id, s.department_id, s.on_hand_qty, s.on_loan_qty FROM app.peripheral_stock s' +
   ' WHERE s.id = $1 AND s.company_id = $2 AND ($3::uuid[] IS NULL OR s.department_id = ANY($3)) FOR UPDATE';
@@ -66,16 +99,40 @@ export interface StockListQuery {
   categoryId?: string;
   departmentId?: string;
   q?: string;
+  /** q 를 찾을 열: 'all'(기본) | STOCK_TEXT_FIELDS */
+  qField?: string;
+  /** 열별 "포함" 조건(AND). 키는 STOCK_TEXT_FIELDS. */
+  filters?: Record<string, string>;
+  /** 없으면 (카테고리, 제조사, 모델, 부서) 순 */
+  sort?: StockSortKey;
+  order?: 'asc' | 'desc';
   page?: number;
   pageSize?: number;
 }
 
+const isStockField = (name: string): name is StockTextField => Object.hasOwn(STOCK_FILTER_SLOTS, name);
+
 export async function listStock(db: Db, actor: Actor, access: DataAccess, query: StockListQuery) {
   const { page, pageSize, offset } = paging(query);
-  const q = query.q?.trim();
-  const filters = [actor.companyId, access.scope, query.modelId ?? null, query.categoryId ?? null, query.departmentId ?? null, q ? likePattern(q) : null];
+  const sortKey = `${query.sort ?? 'category'}:${query.order ?? 'asc'}`;
+  if (!Object.hasOwn(SQL_STOCK_PAGE_BY, sortKey)) throw badRequest('정렬 기준이 올바르지 않습니다.');
+  const columns = new Map<StockTextField, string[]>(STOCK_TEXT_FIELDS.map((f) => [f, []]));
+  const add = (name: string, raw: string) => {
+    if (!isStockField(name)) throw badRequest('검색할 필드가 올바르지 않습니다.');
+    const text = raw.trim();
+    if (text) columns.get(name)!.push(likePattern(text));
+  };
+  for (const [name, value] of Object.entries(query.filters ?? {})) add(name, value);
+  const q = query.q?.trim() || null;
+  const qField = query.qField ?? 'all';
+  if (qField !== 'all') add(qField, q ?? '');
+  const filters = [
+    actor.companyId, access.scope, query.modelId ?? null, query.categoryId ?? null, query.departmentId ?? null,
+    qField === 'all' && q ? likePattern(q) : null,
+    ...STOCK_TEXT_FIELDS.map((f) => columns.get(f)!),
+  ];
   const count = await db.query<{ n: number }>(SQL_STOCK_COUNT, filters);
-  const rows = await db.query<StockRow>(SQL_STOCK_PAGE, [...filters, pageSize, offset]);
+  const rows = await db.query<StockRow>(SQL_STOCK_PAGE_BY[sortKey] as string, [...filters, pageSize, offset]);
   return { total: count.rows[0]?.n ?? 0, page, pageSize, items: rows.rows };
 }
 

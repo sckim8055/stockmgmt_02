@@ -1,22 +1,26 @@
 'use client';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useId, useState, type ReactNode } from 'react';
 import type { AssetState } from '@/lib/assets/transitions';
 import { RequireCompany, useShell } from '../../shell';
-import { api, Badge, Button, EmptyRow, ErrorText, PageHeader, smallInput, Table, td } from '../../ui';
+import { api, Badge, Button, ErrorText, PageHeader, smallInput } from '../../ui';
 import { CreateAssetDialog } from './create-dialog';
-import { STATE_SUBSTATES, useAssetLabels } from './labels';
-import { isOverdue, listOf, modelLabel, PersonPicker, StateBadge, useDebounced, useList, type PersonRef } from './shared';
-import { SORT_KEYS, type AssetPage, type CategoryOption, type DepartmentOption, type ModelOption, type SortKey } from './types';
+import { STATE_SUBSTATES, STATE_TONE, useAssetLabels, type Substate } from './labels';
+import { isOverdue, listOf, modelLabel, PersonPicker, StateBadge, useCustomDisplay, useList, type PersonRef } from './shared';
+import { SORT_KEYS, type AssetPage, type AssetRow, type CategoryOption, type DepartmentOption, type ModelOption, type SortKey } from './types';
+import { apiQuery, FILTER_PARAM, ListPager, ListTable, parsePageSize, SearchToolbar, useListUrl, type Column, type FieldOption } from '../list-tools';
 import { useT } from '../../i18n';
 import { TEXT } from './page.text';
 import { useFmt } from '../../i18n/format';
 
-const PAGE_SIZE = 50;
+/**
+ * 주소에서 읽어 API 로 그대로 넘기는 조건. holderName 은 화면 표시용이라 넘기지 않는다.
+ * 열 필터(f_<열>)는 apiQuery 가 따로 옮긴다.
+ */
+const API_KEYS = ['q', 'qField', 'state', 'substate', 'categoryId', 'modelId', 'departmentId', 'holderPersonId', 'includeVoid', 'overdue', 'sort', 'order', 'page'] as const;
 
-/** URL 에서 읽어 API 로 그대로 넘기는 조건. holderName 은 화면 표시용이라 넘기지 않는다. */
-const API_KEYS = ['q', 'state', 'substate', 'categoryId', 'modelId', 'departmentId', 'holderPersonId', 'includeVoid', 'overdue', 'sort', 'order', 'page'] as const;
+/** 상태 칩의 순서. 등록 취소(VOID)는 "등록 취소 포함"을 켰을 때만 보인다. */
+const CHIP_STATES: AssetState[] = ['IN_STOCK', 'IN_USE', 'MAINTENANCE', 'MISSING', 'ON_ORDER', 'RETIRED', 'VOID'];
 
 export default function AssetsPage() {
   const T = useT(TEXT);
@@ -34,18 +38,14 @@ function AssetsInner() {
   const F = useFmt();
   const L = useAssetLabels();
   const T = useT(TEXT);
+  const showCustom = useCustomDisplay();
   const { can, perms } = useShell();
-  const router = useRouter();
-  const sp = useSearchParams();
-  const spKey = sp.toString();
-  const get = (k: string) => sp.get(k) ?? '';
+  const { spKey, get, setParams, reset } = useListUrl('/assets');
 
   const [data, setData] = useState<AssetPage | null>(null);
   const [loadError, setLoadError] = useState('');
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<{ id: string; tag: string } | null>(null);
-  const [qInput, setQInput] = useState(get('q'));
-  const dq = useDebounced(qInput.trim(), 350);
 
   const categories = useList<CategoryOption>(can('master.category', 'read') ? '/api/master/categories?kind=ASSET&includeInactive=true' : null, 'categories');
   const models = useList<ModelOption>(can('master.model', 'read') ? '/api/master/models?kind=ASSET&includeInactive=true' : null, 'models');
@@ -54,33 +54,12 @@ function AssetsInner() {
   const scope = perms.departmentScope;
   const deptOptions = listOf(departments).filter((d) => scope === null || scope.includes(d.id));
 
-  function setParams(patch: Record<string, string | null>, keepPage = false) {
-    const next = new URLSearchParams(spKey);
-    for (const [k, v] of Object.entries(patch)) {
-      if (v) next.set(k, v);
-      else next.delete(k);
-    }
-    if (!keepPage) next.delete('page');
-    const qs = next.toString();
-    router.replace(qs ? `/assets?${qs}` : '/assets', { scroll: false });
-  }
-
-  useEffect(() => {
-    // 입력이 멈췄을 때만 URL 을 바꾼다.
-    if (dq !== (new URLSearchParams(spKey).get('q') ?? '')) setParams({ q: dq || null });
-  }, [dq]);
-
+  const pageSize = parsePageSize(get('pageSize'));
   const [reload, setReload] = useState(0);
   useEffect(() => {
-    const from = new URLSearchParams(spKey);
-    const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) });
-    for (const k of API_KEYS) {
-      const v = from.get(k);
-      if (v) params.set(k, v);
-    }
     let live = true;
     void (async () => {
-      const r = await api<AssetPage>('GET', `/api/assets?${params.toString()}`);
+      const r = await api<AssetPage>('GET', `/api/assets?${apiQuery(spKey, API_KEYS, pageSize)}`);
       if (!live) return;
       if (r.ok) {
         setData(r.data);
@@ -96,38 +75,91 @@ function AssetsInner() {
   }, [spKey, reload]);
 
   const items = data?.items ?? [];
-  // 제한 필드는 권한이 없으면 서버가 키 자체를 뺀다. 응답에 키가 있을 때만 열을 그린다.
-  const showPrice = items.some((r) => 'purchase_price' in r);
-  const showSupplier = items.some((r) => 'supplier' in r);
-  const lastPage = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
-  const page = data?.page ?? 1;
-
+  const fields = data?.fields;
   const sort = (SORT_KEYS as readonly string[]).includes(get('sort')) ? (get('sort') as SortKey) : 'asset_tag';
   const order = get('order') === 'desc' ? 'desc' : 'asc';
-  const sortHead = (key: SortKey, label: string): ReactNode => {
-    const active = sort === key;
-    return (
-      <button
-        type="button"
-        onClick={() => setParams({ sort: key, order: active && order === 'asc' ? 'desc' : 'asc' })}
-        aria-label={active ? `${label} (${order === 'asc' ? T.sortAsc : T.sortDesc})` : label}
-        style={{ border: 0, background: 'transparent', font: 'inherit', fontWeight: 600, cursor: 'pointer', padding: 0, color: active ? 'var(--accent-text)' : 'inherit' }}
-      >
-        {label}{active ? (order === 'asc' ? ' ▲' : ' ▼') : ''}
-      </button>
-    );
-  };
-
-  const head: ReactNode[] = [
-    sortHead('asset_tag', T.colTag), sortHead('model', T.colModel), T.colCategory, T.colSerial, sortHead('state', T.colState),
-    sortHead('holder', T.colHolder), sortHead('department', T.colDept), T.colLocation, sortHead('due_date', T.colDue),
-  ];
-  if (showPrice) head.push(sortHead('purchase_price', T.colPrice));
-  if (showSupplier) head.push(T.colSupplier);
-
   const stateValue = get('state') ? (get('substate') ? `${get('state')}:${get('substate')}` : get('state')) : '';
   const categoryId = get('categoryId');
   const holder: PersonRef | null = get('holderPersonId') ? { id: get('holderPersonId'), name: get('holderName') || get('holderPersonId') } : null;
+
+  // 검색할 필드: 화면에 보이는 열과 같다. 읽을 수 없는 열은 서버가 fields 에서 뺀다.
+  const searchFields: FieldOption[] = [
+    { value: 'asset_tag', label: T.colTag },
+    { value: 'category', label: T.colCategory },
+    { value: 'manufacturer', label: T.colManufacturer },
+    { value: 'model', label: T.colModel },
+    { value: 'serial', label: T.colSerial },
+    { value: 'holder', label: T.colHolderOrNo },
+    { value: 'department', label: T.colDept },
+    { value: 'location', label: T.colLocation },
+    ...(fields?.supplier ? [{ value: 'supplier', label: T.colSupplier }] : []),
+    ...(fields?.custom ?? []).map((c) => ({ value: `cf.${c.key}`, label: c.label })),
+  ];
+
+  const stateSelect = (
+    <select
+      aria-label={T.filterState}
+      value={stateValue}
+      onChange={(e) => {
+        const [state, substate] = e.target.value.split(':');
+        setParams({ state: state || null, substate: substate || null });
+      }}
+    >
+      <option value="">{T.all}</option>
+      {(Object.keys(L.state) as AssetState[]).map((s) => [
+        <option key={s} value={s}>{L.state[s]}</option>,
+        ...STATE_SUBSTATES[s].map((sub) => (
+          <option key={`${s}:${sub}`} value={`${s}:${sub}`}>{`${L.state[s]} · ${L.substate[sub]}`}</option>
+        )),
+      ])}
+    </select>
+  );
+
+  // 열: 이름 · 필수(엑셀 업로드의 필수 열과 같다) · 정렬 기준 · 열 필터 이름.
+  const columns: Column<AssetRow>[] = [
+    { id: 'asset_tag', label: T.colTag, required: true, sort: 'asset_tag', filter: 'asset_tag', sticky: true, nowrap: true, cell: (a) => <Link href={`/assets/${a.id}`}>{a.asset_tag}</Link> },
+    { id: 'category', label: T.colCategory, required: true, sort: 'category', filter: 'category', cell: (a) => a.category_name },
+    { id: 'model', label: T.colModel, required: true, sort: 'model', filter: 'model', cell: (a) => a.model_name },
+    { id: 'state', label: T.colState, required: true, sort: 'state', filterNode: stateSelect, nowrap: true, cell: (a) => <StateBadge state={a.state} substate={a.substate} /> },
+    { id: 'manufacturer', label: T.colManufacturer, required: true, sort: 'manufacturer', filter: 'manufacturer', cell: (a) => a.manufacturer },
+    { id: 'serial', label: T.colSerial, required: false, sort: 'serial', filter: 'serial', cell: (a) => a.serial_number ?? '' },
+    { id: 'holder', label: T.colHolder, required: false, sort: 'holder', filter: 'holder', cell: (a) => a.holder_name ?? '' },
+    { id: 'employee_no', label: T.colEmployeeNo, required: false, sort: 'employee_no', filter: 'employee_no', nowrap: true, cell: (a) => a.holder_employee_no ?? '' },
+    { id: 'department', label: T.colDept, required: false, sort: 'department', filter: 'department', cell: (a) => a.department_name },
+    { id: 'location', label: T.colLocation, required: false, sort: 'location', filter: 'location', cell: (a) => a.location ?? '' },
+    { id: 'purchase_date', label: T.colPurchaseDate, required: false, sort: 'purchase_date', filter: 'purchase_date', nowrap: true, cell: (a) => a.purchase_date ?? '' },
+    { id: 'warranty_end', label: T.colWarrantyEnd, required: false, sort: 'warranty_end', filter: 'warranty_end', nowrap: true, cell: (a) => a.warranty_end ?? '' },
+    {
+      id: 'due_date', label: T.colDue, required: false, sort: 'due_date', nowrap: true,
+      cell: (a) => (
+        <>
+          {a.due_date ?? ''}
+          {a.state === 'IN_USE' && isOverdue(a.due_date) ? <> <Badge tone="red">{T.overdue}</Badge></> : null}
+        </>
+      ),
+    },
+  ];
+  if (fields?.supplier) columns.push({ id: 'supplier', label: T.colSupplier, required: false, sort: 'supplier', filter: 'supplier', cell: (a) => a.supplier ?? '' });
+  if (fields?.purchasePrice) {
+    columns.push({ id: 'purchase_price', label: T.colPrice, required: false, sort: 'purchase_price', filter: 'purchase_price', align: 'right', nowrap: true, cell: (a) => F.optNum(a.purchase_price) });
+  }
+  for (const c of fields?.custom ?? []) {
+    columns.push({
+      id: `cf.${c.key}`, label: c.label, required: false, filter: `cf.${c.key}`,
+      cell: (a) => (a.custom[c.key] === undefined || a.custom[c.key] === null ? '' : showCustom(a.custom[c.key])),
+    });
+  }
+
+  const summary = data?.summary;
+  const chip = (key: string, label: string, n: number, pressed: boolean, onClick: () => void, tone?: string, sub = false): ReactNode => (
+    <li key={key}>
+      <button type="button" className={sub ? 'status-chip status-chip--sub' : 'status-chip'} aria-pressed={pressed} onClick={onClick} data-testid={`chip-${key}`}>
+        {tone ? <span className={`status-chip__dot status-chip__dot--${tone}`} aria-hidden="true" /> : null}
+        {label}
+        <span className="status-chip__n">{F.num(n)}</span>
+      </button>
+    </li>
+  );
 
   return (
     <div>
@@ -135,33 +167,19 @@ function AssetsInner() {
         title={T.title}
         actions={can('asset.item', 'create') ? <Button variant="primary" onClick={() => { setCreated(null); setCreating(true); }}>{T.add}</Button> : null}
       />
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 10, fontSize: 14, flexWrap: 'wrap' }}>
-        <FilterBox label={T.filterQ}>
-          {(id) => (
-            <input id={id} type="search" value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder={T.filterQPlaceholder} maxLength={100} style={{ ...smallInput, width: 230, margin: 0 }} />
-          )}
-        </FilterBox>
-        <FilterBox label={T.filterState}>
-          {(id) => (
-            <select
-              id={id}
-              value={stateValue}
-              onChange={(e) => {
-                const [state, substate] = e.target.value.split(':');
-                setParams({ state: state || null, substate: substate || null });
-              }}
-              style={{ ...smallInput, width: 'auto', margin: 0 }}
-            >
-              <option value="">{T.all}</option>
-              {(Object.keys(L.state) as AssetState[]).map((s) => [
-                <option key={s} value={s}>{L.state[s]}</option>,
-                ...STATE_SUBSTATES[s].map((sub) => (
-                  <option key={`${s}:${sub}`} value={`${s}:${sub}`}>{`${L.state[s]} · ${L.substate[sub]}`}</option>
-                )),
-              ])}
-            </select>
-          )}
-        </FilterBox>
+
+      <SearchToolbar
+        fields={searchFields}
+        field={get('qField') || 'all'}
+        q={get('q')}
+        onSearch={(field, q) => setParams({ q: q || null, qField: field === 'all' ? null : field })}
+        onReset={reset}
+        pageSize={pageSize}
+        onPageSize={(n) => setParams({ pageSize: n === 50 ? null : String(n) })}
+        total={data ? data.total : null}
+      />
+
+      <div className="list-filters">
         {listOf(categories).length > 0 ? (
           <FilterBox label={T.filterCategory}>
             {(id) => (
@@ -213,12 +231,25 @@ function AssetsInner() {
           <input type="checkbox" checked={get('overdue') === 'true'} onChange={(e) => setParams({ overdue: e.target.checked ? 'true' : null })} />
           {T.overdueOnly}
         </label>
-        {spKey ? (
-          <div style={{ paddingBottom: 4 }}>
-            <Button small variant="link" onClick={() => { setQInput(''); router.replace('/assets', { scroll: false }); }}>{T.reset}</Button>
-          </div>
-        ) : null}
       </div>
+
+      {summary ? (
+        <ul className="chip-row" aria-label={T.chipsLabel} data-testid="status-chips">
+          {chip('all', T.all, summary.total, !get('state'), () => setParams({ state: null, substate: null }))}
+          {CHIP_STATES.filter((s) => s !== 'VOID' || get('includeVoid') === 'true').map((s) => {
+            const n = summary.byState[s] ?? 0;
+            const items: ReactNode[] = [chip(s, L.state[s], n, get('state') === s && !get('substate'), () => setParams({ state: s, substate: null }), STATE_TONE[s])];
+            // 재고는 세부 상태(사용 가능·예약·불량)까지 보여 준다.
+            if (s === 'IN_STOCK') {
+              for (const sub of STATE_SUBSTATES.IN_STOCK) {
+                const m = summary.inStock[sub as Substate] ?? 0;
+                items.push(chip(`IN_STOCK-${sub}`, `${L.state.IN_STOCK} · ${L.substate[sub]}`, m, get('state') === 'IN_STOCK' && get('substate') === sub, () => setParams({ state: 'IN_STOCK', substate: sub }), undefined, true));
+              }
+            }
+            return items;
+          })}
+        </ul>
+      ) : null}
 
       {created ? (
         <p role="status" style={{ color: 'var(--success-text)', fontSize: 14 }}>
@@ -229,35 +260,20 @@ function AssetsInner() {
       {data === null && !loadError ? <p style={{ color: 'var(--text-muted)' }}>{T.loading}</p> : null}
       {data ? (
         <>
-          <Table caption={T.total(data.total)} head={head}>
-            {items.length === 0 ? <EmptyRow colSpan={head.length}>{T.empty}</EmptyRow> : null}
-            {items.map((a) => (
-              <tr key={a.id}>
-                <td style={td}><Link href={`/assets/${a.id}`}>{a.asset_tag}</Link></td>
-                <td style={td}>{modelLabel({ manufacturer: a.manufacturer, name: a.model_name })}</td>
-                <td style={td}>{a.category_name}</td>
-                <td style={td}>{a.serial_number ?? ''}</td>
-                <td style={td}><StateBadge state={a.state} substate={a.substate} /></td>
-                <td style={td}>
-                  {a.holder_name ?? ''}
-                  {a.holder_employee_no ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> {a.holder_employee_no}</span> : null}
-                </td>
-                <td style={td}>{a.department_name}</td>
-                <td style={td}>{a.location ?? ''}</td>
-                <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                  {a.due_date ?? ''}
-                  {a.state === 'IN_USE' && isOverdue(a.due_date) ? <> <Badge tone="red">{T.overdue}</Badge></> : null}
-                </td>
-                {showPrice ? <td style={{ ...td, textAlign: 'right' }}>{F.optNum(a.purchase_price)}</td> : null}
-                {showSupplier ? <td style={td}>{a.supplier ?? ''}</td> : null}
-              </tr>
-            ))}
-          </Table>
-          <nav aria-label={T.page(page, lastPage)} style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 10, fontSize: 14 }}>
-            <Button small disabled={page <= 1} onClick={() => setParams({ page: String(page - 1) }, true)}>{T.prev}</Button>
-            <span>{T.page(page, lastPage)}</span>
-            <Button small disabled={page >= lastPage} onClick={() => setParams({ page: String(page + 1) }, true)}>{T.next}</Button>
-          </nav>
+          <ListTable
+            testId="assets-table"
+            caption={T.total(data.total)}
+            columns={columns}
+            rows={items}
+            rowKey={(a) => a.id}
+            sort={sort}
+            order={order}
+            onSort={(key, o) => setParams({ sort: key === 'asset_tag' ? null : key, order: o === 'asc' ? null : o })}
+            filterValue={(name) => get(`${FILTER_PARAM}${name}`)}
+            onFilter={(name, v) => setParams({ [`${FILTER_PARAM}${name}`]: v || null })}
+            empty={T.empty}
+          />
+          <ListPager page={data.page} total={data.total} pageSize={data.pageSize} onPage={(p) => setParams({ page: String(p) }, true)} />
         </>
       ) : null}
 

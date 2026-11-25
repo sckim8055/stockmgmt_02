@@ -32,11 +32,27 @@ export interface AssetRow {
   holder_employee_no: string | null;
 }
 
+/** 상태별 건수(상태 조건만 빼고 나머지 조건은 목록과 같다) */
+export interface AssetSummary {
+  total: number;
+  byState: Partial<Record<AssetState, number>>;
+  inStock: Partial<Record<Substate, number>>;
+}
+
+/** 이 사용자가 볼 수 있는 열. 제한 필드는 읽을 수 없으면 키 자체가 없다. */
+export interface AssetListFields {
+  supplier?: true;
+  purchasePrice?: true;
+  custom: { key: string; label: string; data_type: CustomDataType }[];
+}
+
 export interface AssetPage {
   total: number;
   page: number;
   pageSize: number;
   items: AssetRow[];
+  summary: AssetSummary;
+  fields: AssetListFields;
 }
 
 export interface HistoryRow {
@@ -105,6 +121,7 @@ export interface PersonOption {
  * (assets.ts 는 DB·감사 로그 모듈을 import 하므로 화면에서 직접 가져올 수 없다)
  */
 export const SORT_KEYS = [
-  'asset_tag', 'state', 'model', 'department', 'holder', 'warranty_end', 'purchase_date', 'due_date', 'updated_at', 'purchase_price',
+  'asset_tag', 'state', 'model', 'category', 'manufacturer', 'serial', 'department', 'holder', 'employee_no', 'location',
+  'warranty_end', 'purchase_date', 'due_date', 'created_at', 'updated_at', 'purchase_price', 'supplier',
 ] as const;
 export type SortKey = (typeof SORT_KEYS)[number];

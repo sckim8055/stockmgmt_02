@@ -329,6 +329,10 @@ function TopBar({
             <span className="user-chip__meta">({me.loginId} · {userTypeLabel[me.userType] ?? me.userType})</span>
           </span>
         </span>
+        {/* 로그인한 사용자가 스스로 비밀번호를 바꾸는 화면(주소를 직접 치지 않아도 되도록). 화면과 API 는 그대로다. */}
+        <Link href="/change-password" className="btn btn--small btn--link" data-testid="change-password-link">
+          {T.changePassword}
+        </Link>
         <Button
           small
           onClick={async () => {

@@ -7,7 +7,7 @@ import type { Db } from '@/lib/db/context';
 import { evaluateForModel, evaluateForTargets } from '@/lib/alerts/thresholds';
 import { companyToday } from '@/lib/alerts/today';
 import { writeAudit } from '@/lib/auth/audit';
-import type { DataAccess } from '@/lib/authz/scope';
+import type { DataAccess, RestrictedField } from '@/lib/authz/scope';
 import { HttpError, badRequest, forbidden, notFound } from '@/lib/http/errors';
 import { hasNul, isIsoDate } from '@/lib/validation';
 import type { Actor } from '@/lib/http/route';
@@ -33,6 +33,11 @@ const SQL_ASSET_FROM =
 // $1 기업, $2 부서 범위(null = 전체). 이 두 조건은 자산을 읽는 모든 쿼리에 들어간다.
 const SQL_ASSET_VISIBLE = ' a.company_id = $1 AND ($2::uuid[] IS NULL OR a.department_id = ANY($2)) ';
 
+// 목록·건수·상태별 요약이 같은 조건을 쓴다. 매개변수 번호는 ASSET_FILTER_SLOTS 와 listAssets 의 배열 순서와 같다.
+// $12~$24: 열별 "포함" 조건. 각각 LIKE 패턴의 배열이고 모두 맞아야 한다(빈 배열 = 조건 없음).
+//          한 열에 열 필터와 "이 필드에서 검색"이 함께 오면 패턴이 둘이 된다.
+// $25, $26: 사용자 지정 필드 조건. 키 배열과 패턴 배열(같은 길이). 키는 기업의 정의로 검증한 뒤 매개변수로만 넘긴다.
+// (RLS 아래에서 ILIKE·->> 는 인덱스를 쓰지 못한다. 기업의 자산을 한 번 훑는다 — docs/REVIEW-phase5.md)
 const SQL_ASSET_FILTERS =
   ' AND ($3::text IS NULL OR a.state = $3)' +
   ' AND ($4::text IS NULL OR a.substate = $4)' +
@@ -40,17 +45,41 @@ const SQL_ASSET_FILTERS =
   ' AND ($6::uuid IS NULL OR m.category_id = $6)' +
   ' AND ($7::uuid IS NULL OR a.department_id = $7)' +
   ' AND ($8::uuid IS NULL OR a.holder_person_id = $8)' +
-  // 검색 대상에 제한 필드(공급업체 등)는 넣지 않는다. 검색 결과로 값을 추정할 수 있기 때문이다.
+  // 전체 필드 검색. 제한 필드(공급업체·구매가·제한된 사용자 지정 필드)는 넣지 않는다. 검색 결과로 값을 추정할 수 있기 때문이다.
   ' AND ($9::text IS NULL OR a.asset_tag ILIKE $9 OR a.serial_number ILIKE $9 OR a.location ILIKE $9' +
-  '      OR m.name ILIKE $9 OR m.manufacturer ILIKE $9 OR p.name ILIKE $9)' +
+  '      OR m.name ILIKE $9 OR m.manufacturer ILIKE $9 OR p.name ILIKE $9' +
+  '      OR c.name ILIKE $9 OR d.name ILIKE $9 OR p.employee_no ILIKE $9)' +
   // $10 = 목록에서 뺄 상태들. 등록 취소(VOID)된 자산은 따로 요청할 때만 보인다.
   ' AND a.state <> ALL($10::text[])' +
   // $11 = 오늘(기업 시간대). 값이 있으면 반납 기한이 지난 대여만.
-  " AND ($11::date IS NULL OR (a.state = 'IN_USE' AND a.due_date < $11::date)) ";
+  " AND ($11::date IS NULL OR (a.state = 'IN_USE' AND a.due_date < $11::date))" +
+  ' AND (cardinality($12::text[]) = 0 OR a.asset_tag ILIKE ALL($12::text[]))' +
+  ' AND (cardinality($13::text[]) = 0 OR c.name ILIKE ALL($13::text[]))' +
+  ' AND (cardinality($14::text[]) = 0 OR m.manufacturer ILIKE ALL($14::text[]))' +
+  ' AND (cardinality($15::text[]) = 0 OR m.name ILIKE ALL($15::text[]))' +
+  ' AND (cardinality($16::text[]) = 0 OR a.serial_number ILIKE ALL($16::text[]))' +
+  // 보유자: 이름 또는 사번. 줄바꿈으로 이어 붙여 비교한다(검색어에는 제어 문자가 없으므로 두 값에 걸쳐 맞을 수 없다).
+  ' AND (cardinality($17::text[]) = 0 OR concat_ws(chr(10), p.name, p.employee_no) ILIKE ALL($17::text[]))' +
+  ' AND (cardinality($18::text[]) = 0 OR p.employee_no ILIKE ALL($18::text[]))' +
+  ' AND (cardinality($19::text[]) = 0 OR d.name ILIKE ALL($19::text[]))' +
+  ' AND (cardinality($20::text[]) = 0 OR a.location ILIKE ALL($20::text[]))' +
+  // 제한 필드. listAssets 가 읽기 권한을 확인한 뒤에만 패턴을 넣는다(권한이 없으면 403).
+  ' AND (cardinality($21::text[]) = 0 OR a.supplier ILIKE ALL($21::text[]))' +
+  ' AND (cardinality($22::text[]) = 0 OR a.purchase_price::text ILIKE ALL($22::text[]))' +
+  ' AND (cardinality($23::text[]) = 0 OR a.purchase_date::text ILIKE ALL($23::text[]))' +
+  ' AND (cardinality($24::text[]) = 0 OR a.warranty_end::text ILIKE ALL($24::text[]))' +
+  // 키 배열이 비었는지를 먼저 보는 것은 실행 계획 때문이다. 조건이 없을 때 하위 쿼리가 계획에서 빠지지 않으면
+  // 행 수 추정이 1로 떨어져 조인 순서가 나빠진다(자산 2,000대에서 첫 쪽 53ms → 약 6ms).
+  ' AND (cardinality($25::text[]) = 0 OR NOT EXISTS (SELECT 1 FROM unnest($25::text[], $26::text[]) AS f(k, pat)' +
+  '      WHERE (a.custom ->> f.k) IS NULL OR NOT ((a.custom ->> f.k) ILIKE f.pat))) ';
 
 const SQL_ASSET_LIST_BASE = 'SELECT' + SQL_ASSET_COLUMNS + SQL_ASSET_FROM + 'WHERE' + SQL_ASSET_VISIBLE + SQL_ASSET_FILTERS;
-const SQL_ASSET_PAGE = ', a.id LIMIT $12 OFFSET $13';
+// 같은 값끼리는 자산 태그(기업 안에서 고유)로 순서를 정한다. 그래야 쪽을 넘겨도 행이 겹치거나 빠지지 않는다.
+const SQL_ASSET_PAGE = ', a.asset_tag_key ASC, a.id LIMIT $27 OFFSET $28';
 const SQL_ASSET_COUNT = 'SELECT count(*)::int AS n' + SQL_ASSET_FROM + 'WHERE' + SQL_ASSET_VISIBLE + SQL_ASSET_FILTERS;
+// 상태별 건수(한눈에 보는 상태). 상태 조건($3, $4)은 비워서 부르고 나머지 조건은 목록과 같다. 결과는 (상태, 세부 상태) 조합 수만큼(10행 남짓).
+const SQL_ASSET_SUMMARY =
+  'SELECT a.state, a.substate, count(*)::int AS n' + SQL_ASSET_FROM + 'WHERE' + SQL_ASSET_VISIBLE + SQL_ASSET_FILTERS + ' GROUP BY a.state, a.substate';
 
 // 정렬은 이 목록에 있는 것만 허용한다. 입력값이 SQL 에 들어가지 않는다.
 const SQL_ASSET_LIST_BY: Record<string, string> = {
@@ -60,26 +89,64 @@ const SQL_ASSET_LIST_BY: Record<string, string> = {
   'state:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.state DESC, a.substate DESC NULLS LAST' + SQL_ASSET_PAGE,
   'model:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(m.manufacturer) ASC, lower(m.name) ASC' + SQL_ASSET_PAGE,
   'model:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(m.manufacturer) DESC, lower(m.name) DESC' + SQL_ASSET_PAGE,
+  'category:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(c.name) ASC' + SQL_ASSET_PAGE,
+  'category:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(c.name) DESC' + SQL_ASSET_PAGE,
+  'manufacturer:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(m.manufacturer) ASC' + SQL_ASSET_PAGE,
+  'manufacturer:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(m.manufacturer) DESC' + SQL_ASSET_PAGE,
+  'serial:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(a.serial_number) ASC NULLS LAST' + SQL_ASSET_PAGE,
+  'serial:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(a.serial_number) DESC NULLS LAST' + SQL_ASSET_PAGE,
   'department:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(d.name) ASC' + SQL_ASSET_PAGE,
   'department:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(d.name) DESC' + SQL_ASSET_PAGE,
   'holder:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(p.name) ASC NULLS LAST' + SQL_ASSET_PAGE,
   'holder:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(p.name) DESC NULLS LAST' + SQL_ASSET_PAGE,
+  'employee_no:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(p.employee_no) ASC NULLS LAST' + SQL_ASSET_PAGE,
+  'employee_no:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(p.employee_no) DESC NULLS LAST' + SQL_ASSET_PAGE,
+  'location:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(a.location) ASC NULLS LAST' + SQL_ASSET_PAGE,
+  'location:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(a.location) DESC NULLS LAST' + SQL_ASSET_PAGE,
   'warranty_end:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.warranty_end ASC NULLS LAST' + SQL_ASSET_PAGE,
   'warranty_end:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.warranty_end DESC NULLS LAST' + SQL_ASSET_PAGE,
   'purchase_date:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.purchase_date ASC NULLS LAST' + SQL_ASSET_PAGE,
   'purchase_date:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.purchase_date DESC NULLS LAST' + SQL_ASSET_PAGE,
   'due_date:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.due_date ASC NULLS LAST' + SQL_ASSET_PAGE,
   'due_date:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.due_date DESC NULLS LAST' + SQL_ASSET_PAGE,
+  'created_at:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.created_at ASC' + SQL_ASSET_PAGE,
+  'created_at:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.created_at DESC' + SQL_ASSET_PAGE,
   'updated_at:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.updated_at ASC' + SQL_ASSET_PAGE,
   'updated_at:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.updated_at DESC' + SQL_ASSET_PAGE,
   // 제한 필드로 정렬하려면 그 필드의 읽기 권한이 있어야 한다(listAssets 에서 검사).
   'purchase_price:asc': SQL_ASSET_LIST_BASE + ' ORDER BY a.purchase_price ASC NULLS LAST' + SQL_ASSET_PAGE,
   'purchase_price:desc': SQL_ASSET_LIST_BASE + ' ORDER BY a.purchase_price DESC NULLS LAST' + SQL_ASSET_PAGE,
+  'supplier:asc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(a.supplier) ASC NULLS LAST' + SQL_ASSET_PAGE,
+  'supplier:desc': SQL_ASSET_LIST_BASE + ' ORDER BY lower(a.supplier) DESC NULLS LAST' + SQL_ASSET_PAGE,
 };
 export const ASSET_SORT_KEYS = [
-  'asset_tag', 'state', 'model', 'department', 'holder', 'warranty_end', 'purchase_date', 'due_date', 'updated_at', 'purchase_price',
+  'asset_tag', 'state', 'model', 'category', 'manufacturer', 'serial', 'department', 'holder', 'employee_no', 'location',
+  'warranty_end', 'purchase_date', 'due_date', 'created_at', 'updated_at', 'purchase_price', 'supplier',
 ] as const;
 export type AssetSortKey = (typeof ASSET_SORT_KEYS)[number];
+
+/**
+ * 글자로 검색·거를 수 있는 기본 열. 값은 SQL_ASSET_FILTERS 의 매개변수 번호($12~$24)와 짝이다.
+ * 열 필터 매개변수 이름은 `f_<열>`(예: f_asset_tag=NB-0), 사용자 지정 필드는 `f_cf.<키>`(예: f_cf.mac=aa:bb).
+ * qField 도 같은 이름을 쓴다(qField=serial, qField=cf.mac). qField=all(기본)은 $9 의 전체 필드 검색이다.
+ */
+export const ASSET_FILTER_SLOTS = {
+  asset_tag: 12, category: 13, manufacturer: 14, model: 15, serial: 16, holder: 17, employee_no: 18,
+  department: 19, location: 20, supplier: 21, purchase_price: 22, purchase_date: 23, warranty_end: 24,
+} as const;
+export type AssetTextField = keyof typeof ASSET_FILTER_SLOTS;
+export const ASSET_TEXT_FIELDS = Object.keys(ASSET_FILTER_SLOTS) as AssetTextField[];
+/** 사용자 지정 필드를 가리키는 이름의 앞붙이. 키 형식은 custom_field_def.key 의 CHECK 와 같다. */
+export const CUSTOM_FIELD_PREFIX = 'cf.';
+export const CUSTOM_KEY_RE = /^[a-z][a-z0-9_]{0,39}$/;
+/** 한 요청에서 받는 사용자 지정 필드 조건 수 상한 */
+const MAX_CUSTOM_FILTERS = 20;
+
+/** 읽기 권한이 있어야 검색·필터·정렬에 쓸 수 있는 기본 열 */
+const RESTRICTED_COLUMN: Partial<Record<AssetTextField | AssetSortKey, RestrictedField>> = {
+  supplier: 'supplier',
+  purchase_price: 'purchase_price',
+};
 
 const SQL_ASSET_ONE = 'SELECT' + SQL_ASSET_COLUMNS + SQL_ASSET_FROM + 'WHERE' + SQL_ASSET_VISIBLE + 'AND a.id = $3';
 
@@ -99,6 +166,18 @@ interface CustomDef {
 async function loadCustomDefs(db: Db): Promise<CustomDef[]> {
   const { rows } = await db.query<CustomDef>('SELECT key, data_type, is_restricted FROM app.custom_field_def WHERE is_active');
   return rows;
+}
+
+interface ListedCustomDef extends CustomDef {
+  label: string;
+}
+
+// 목록의 검색·필터·열 머리에 쓰는 정의. 이 기업의 사용 중인 필드만(RLS 에 더해 기업 조건을 직접 건다).
+const SQL_CUSTOM_DEFS_FOR_LIST =
+  'SELECT key, label, data_type, is_restricted FROM app.custom_field_def WHERE company_id = $1 AND is_active ORDER BY sort_order, key';
+
+async function loadListCustomDefs(db: Db, actor: Actor): Promise<ListedCustomDef[]> {
+  return (await db.query<ListedCustomDef>(SQL_CUSTOM_DEFS_FOR_LIST, [actor.companyId])).rows;
 }
 
 type AssetRow = Record<string, unknown> & { custom: Record<string, unknown> };
@@ -127,6 +206,10 @@ export interface AssetListQuery {
   departmentId?: string;
   holderPersonId?: string;
   q?: string;
+  /** q 를 찾을 필드: 'all'(기본) | ASSET_TEXT_FIELDS | 'cf.<키>' */
+  qField?: string;
+  /** 열별 "포함" 조건. 키는 ASSET_TEXT_FIELDS 또는 'cf.<키>', 값은 그 열에 들어 있어야 할 글자. 모두 AND. */
+  filters?: Record<string, string>;
   includeVoid?: boolean;
   /** 반납 기한이 지난 대여만 */
   overdue?: boolean;
@@ -136,42 +219,133 @@ export interface AssetListQuery {
   pageSize?: number;
 }
 
+/** 상태별 건수. 상태 조건만 빼고 나머지 조건(범위·검색·필터 등)은 목록과 같다. */
+export interface AssetSummary {
+  total: number;
+  byState: Partial<Record<AssetState, number>>;
+  /** 재고(IN_STOCK)의 세부 상태별 건수 */
+  inStock: Partial<Record<string, number>>;
+}
+
+/**
+ * 이 사용자가 목록에서 볼 수 있는(=검색·필터할 수 있는) 열. 화면은 이것으로 머리·필터 칸을 그린다.
+ * 제한 필드는 present() 와 같이, 읽을 수 없으면 키 자체를 넣지 않는다.
+ */
+export interface AssetListFields {
+  supplier?: true;
+  purchasePrice?: true;
+  custom: { key: string; label: string; data_type: CustomDef['data_type'] }[];
+}
+
 /** LIKE 패턴 문자를 글자 그대로 검색하도록 이스케이프한다. */
 const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 
-export async function listAssets(db: Db, actor: Actor, access: DataAccess, query: AssetListQuery): Promise<{ total: number; page: number; pageSize: number; items: AssetRow[] }> {
-  const sort = query.sort ?? 'asset_tag';
-  if (sort === 'purchase_price' && !access.canReadField('purchase_price')) {
-    throw forbidden('구매가로 정렬할 권한이 없습니다.');
+const canUseCustom = (def: CustomDef, access: DataAccess) => !def.is_restricted || access.canReadField('custom_restricted');
+
+type FieldRef = { kind: 'builtin'; field: AssetTextField } | { kind: 'custom'; key: string };
+
+/**
+ * 검색·필터 대상 이름을 확인한다. 모르는 이름·정의에 없는(또는 비활성·다른 기업의) 사용자 지정 필드는 400,
+ * 읽기 권한이 없는 제한 필드는 403. 권한 없는 필드로 거르면 결과 건수로 숨긴 값을 알아낼 수 있기 때문이다.
+ */
+function resolveField(name: string, access: DataAccess, defs: Map<string, CustomDef>): FieldRef {
+  if (Object.hasOwn(ASSET_FILTER_SLOTS, name)) {
+    const field = name as AssetTextField;
+    const restricted = RESTRICTED_COLUMN[field];
+    if (restricted && !access.canReadField(restricted)) throw forbidden('읽을 권한이 없는 필드로는 검색할 수 없습니다.');
+    return { kind: 'builtin', field };
   }
+  if (name.startsWith(CUSTOM_FIELD_PREFIX)) {
+    const key = name.slice(CUSTOM_FIELD_PREFIX.length);
+    const def = CUSTOM_KEY_RE.test(key) ? defs.get(key) : undefined;
+    if (!def) throw badRequest('정의되지 않은 사용자 지정 필드입니다.');
+    if (!canUseCustom(def, access)) throw forbidden('읽을 권한이 없는 필드로는 검색할 수 없습니다.');
+    return { kind: 'custom', key };
+  }
+  throw badRequest('검색할 필드가 올바르지 않습니다.');
+}
+
+export async function listAssets(
+  db: Db,
+  actor: Actor,
+  access: DataAccess,
+  query: AssetListQuery,
+): Promise<{ total: number; page: number; pageSize: number; items: AssetRow[]; summary: AssetSummary; fields: AssetListFields }> {
+  const sort = query.sort ?? 'asset_tag';
+  const sortRestricted = RESTRICTED_COLUMN[sort];
+  if (sortRestricted && !access.canReadField(sortRestricted)) {
+    throw forbidden(sort === 'purchase_price' ? '구매가로 정렬할 권한이 없습니다.' : '읽을 권한이 없는 필드로는 정렬할 수 없습니다.');
+  }
+  const sortKey = `${sort}:${query.order ?? 'asc'}`;
+  if (!Object.hasOwn(SQL_ASSET_LIST_BY, sortKey)) throw badRequest('정렬 기준이 올바르지 않습니다.');
   const pageSize = Math.min(Math.max(query.pageSize ?? 50, 1), 200);
   const page = Math.max(query.page ?? 1, 1);
-  const q = query.q?.trim();
-  const filters = [
+
+  const defs = await loadListCustomDefs(db, actor);
+  const defByKey = new Map(defs.map((d) => [d.key, d]));
+
+  // 열별 조건을 모은다. 한 열에 여러 패턴이 오면 모두 맞아야 한다.
+  const builtin = new Map<AssetTextField, string[]>(ASSET_TEXT_FIELDS.map((f) => [f, []]));
+  const customKeys: string[] = [];
+  const customPats: string[] = [];
+  const add = (name: string, raw: string) => {
+    const ref = resolveField(name, access, defByKey);
+    const text = raw.trim();
+    if (!text) return;
+    if (ref.kind === 'builtin') builtin.get(ref.field)!.push(likePattern(text));
+    else {
+      customKeys.push(ref.key);
+      customPats.push(likePattern(text));
+    }
+  };
+  for (const [name, value] of Object.entries(query.filters ?? {})) add(name, value);
+  const q = query.q?.trim() || null;
+  const qField = query.qField ?? 'all';
+  let qAll: string | null = null;
+  if (qField === 'all') qAll = q ? likePattern(q) : null;
+  else if (q) add(qField, q);
+  else resolveField(qField, access, defByKey); // 검색어가 없어도 필드 이름은 검사한다(잘못된 요청을 조용히 넘기지 않는다)
+  if (customKeys.length > MAX_CUSTOM_FILTERS) throw badRequest('사용자 지정 필드 조건이 너무 많습니다.');
+
+  const today = query.overdue ? await companyToday(db, actor.companyId) : null;
+  const filters = (state: string | null, substate: string | null) => [
     actor.companyId,
     access.scope,
-    query.state ?? null,
-    query.substate ?? null,
+    state,
+    substate,
     query.modelId ?? null,
     query.categoryId ?? null,
     query.departmentId ?? null,
     query.holderPersonId ?? null,
-    q ? likePattern(q) : null,
+    qAll,
     query.includeVoid ? [] : ['VOID'],
-    query.overdue ? await companyToday(db, actor.companyId) : null,
+    today,
+    ...ASSET_TEXT_FIELDS.map((f) => builtin.get(f)!),
+    customKeys,
+    customPats,
   ];
-  const sortKey = `${sort}:${query.order ?? 'asc'}`;
-  if (!Object.hasOwn(SQL_ASSET_LIST_BY, sortKey)) throw badRequest('정렬 기준이 올바르지 않습니다.');
+  const listed = filters(query.state ?? null, query.substate ?? null);
 
-  const [count, rows, defs] = [
-    await db.query<{ n: number }>(SQL_ASSET_COUNT, filters),
-    await db.query<AssetRow>(SQL_ASSET_LIST_BY[sortKey] as string, [...filters, pageSize, (page - 1) * pageSize]),
-    await loadCustomDefs(db),
-  ];
-  return { total: count.rows[0]?.n ?? 0, page, pageSize, items: rows.rows.map((r) => present(r, access, defs)) };
+  const count = await db.query<{ n: number }>(SQL_ASSET_COUNT, listed);
+  const rows = await db.query<AssetRow>(SQL_ASSET_LIST_BY[sortKey] as string, [...listed, pageSize, (page - 1) * pageSize]);
+  const groups = await db.query<{ state: AssetState; substate: string | null; n: number }>(SQL_ASSET_SUMMARY, filters(null, null));
+
+  const summary: AssetSummary = { total: 0, byState: {}, inStock: {} };
+  for (const g of groups.rows) {
+    summary.total += g.n;
+    summary.byState[g.state] = (summary.byState[g.state] ?? 0) + g.n;
+    if (g.state === 'IN_STOCK' && g.substate) summary.inStock[g.substate] = (summary.inStock[g.substate] ?? 0) + g.n;
+  }
+  const fields: AssetListFields = {
+    custom: defs.filter((d) => canUseCustom(d, access)).map((d) => ({ key: d.key, label: d.label, data_type: d.data_type })),
+  };
+  if (access.canReadField('supplier')) fields.supplier = true;
+  if (access.canReadField('purchase_price')) fields.purchasePrice = true;
+  return { total: count.rows[0]?.n ?? 0, page, pageSize, items: rows.rows.map((r) => present(r, access, defs)), summary, fields };
 }
 
-export async function getAsset(db: Db, actor: Actor, access: DataAccess, assetId: string): Promise<AssetRow> {
+export async function getAsset(
+db: Db, actor: Actor, access: DataAccess, assetId: string): Promise<AssetRow> {
   const { rows } = await db.query<AssetRow>(SQL_ASSET_ONE, [actor.companyId, access.scope, assetId]);
   const row = rows[0];
   if (!row) throw notFound(); // 다른 기업, 범위 밖 부서, 없는 ID 모두 같은 응답

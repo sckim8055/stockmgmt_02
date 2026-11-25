@@ -15,13 +15,49 @@ const Query = z.object({
   departmentId: z.uuid().optional(),
   holderPersonId: z.uuid().optional(),
   q: str().max(100).optional(),
+  // q 를 찾을 필드. 'all' 또는 열 필터와 같은 이름(asset_tag, serial, cf.<키> …). 이름의 최종 검사는 listAssets 가 한다.
+  qField: line().max(64).optional(),
   includeVoid: z.enum(['true', 'false']).optional(),
   overdue: z.enum(['true', 'false']).optional(),
   sort: z.enum(ASSET_SORT_KEYS).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
+  // 한 쪽에 보이는 행 수. 화면은 20·50·100·200 중에서 고르게 한다(200 이 상한, "전체"는 없다).
   pageSize: z.coerce.number().int().min(1).max(200).optional(),
 });
+
+/**
+ * 열 필터: `f_<열>=<글자>` (열에 그 글자가 들어 있는 행만, 여러 개면 AND).
+ *   <열> = asset_tag | category | manufacturer | model | serial | holder | employee_no | department | location
+ *        | supplier | purchase_price | purchase_date | warranty_end | cf.<사용자 지정 필드 키>
+ * 값은 앞뒤 공백을 자르고 100자까지, 제어 문자는 받지 않는다. 모르는 열은 400, 읽을 권한이 없는 열은 403(listAssets).
+ */
+const FILTER_PREFIX = 'f_';
+const MAX_FILTERS = 40;
+const FilterValue = line().max(100);
+const FilterName = z.string().regex(/^[a-z][a-z0-9_]{0,39}$|^cf\.[a-z][a-z0-9_]{0,39}$/);
+
+function parseQuery(params: URLSearchParams): Parameters<typeof listAssets>[3] {
+  const plain: Record<string, string> = {};
+  const filters: Record<string, string> = {};
+  let n = 0;
+  for (const [key, value] of params) {
+    if (!key.startsWith(FILTER_PREFIX)) {
+      plain[key] = value;
+      continue;
+    }
+    const name = key.slice(FILTER_PREFIX.length);
+    const v = FilterValue.safeParse(value);
+    if (!FilterName.safeParse(name).success || !v.success || Object.hasOwn(filters, name) || ++n > MAX_FILTERS) {
+      throw badRequest('열 조건이 올바르지 않습니다.');
+    }
+    filters[name] = v.data;
+  }
+  const parsed = Query.safeParse(plain);
+  if (!parsed.success) throw badRequest('조회 조건이 올바르지 않습니다.');
+  const { includeVoid, overdue, ...rest } = parsed.data;
+  return { ...rest, filters, includeVoid: includeVoid === 'true', overdue: overdue === 'true' };
+}
 
 const Body = z.object({
   modelId: z.uuid(),
@@ -41,12 +77,8 @@ export const GET = route(
   { access: 'permission', permission: { resource: 'asset.item', operation: 'read' } },
   async ({ req, actor, tenant }) => {
     const who = actor();
-    const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
-    if (!parsed.success) throw badRequest('조회 조건이 올바르지 않습니다.');
-    const { includeVoid, overdue, ...rest } = parsed.data;
-    const result = await tenant(async (db) =>
-      listAssets(db, who, await loadDataAccess(db, who), { ...rest, includeVoid: includeVoid === 'true', overdue: overdue === 'true' }),
-    );
+    const query = parseQuery(new URL(req.url).searchParams);
+    const result = await tenant(async (db) => listAssets(db, who, await loadDataAccess(db, who), query));
     return json(result);
   },
 );

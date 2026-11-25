@@ -190,6 +190,122 @@ def test_dashboard(browser):
     ctx.close()
 
 
+# ───────────────────────── assets list: toolbar, status chips, sorting, column filters, reset ─────────────────────────
+def tags_shown(pg):
+    return [t.strip() for t in pg.locator('[data-testid=assets-table] tbody tr td:first-child').all_inner_texts()]
+
+
+def wait_list(pg):
+    pg.wait_for_load_state('networkidle')
+    pg.wait_for_timeout(300)
+
+
+def test_assets_toolbar(browser):
+    ctx, pg = new_page(browser)
+    login(pg, 'SMOKEA', 'admin')
+    pg.goto('/assets')
+    pg.wait_for_selector('[data-testid=assets-table]')
+    wait_list(pg)
+    check('assets/toolbar: 4 rows, total shown', len(tags_shown(pg)) == 4 and '4' in pg.inner_text('[data-testid=list-total]'), tags_shown(pg))
+    chip_n = lambda k: pg.inner_text(f'[data-testid=chip-{k}] .status-chip__n').strip()
+    check('assets/chips: counts (all 4, in stock 2, in use 2, available 2)', [chip_n('all'), chip_n('IN_STOCK'), chip_n('IN_USE'), chip_n('IN_STOCK-AVAILABLE')] == ['4', '2', '2', '2'],
+          [chip_n('all'), chip_n('IN_STOCK'), chip_n('IN_USE')])
+    heads = pg.locator('[data-testid=assets-table] thead tr').first.inner_text()
+    check('assets/headers: REQ/OPT marks (필수·선택)', '필수' in heads and '선택' in heads, heads)
+    check('assets/headers: admin sees supplier column', pg.locator('th[data-col=supplier]').count() == 1)
+
+    # search one field
+    pg.select_option('[data-testid=search-field]', 'asset_tag')
+    pg.fill('[data-testid=search-text]', 'SM-004')
+    pg.get_by_role('button', name='검색', exact=True).click()
+    wait_list(pg)
+    check('assets/search: asset_tag=SM-004 → 1 row, in URL', tags_shown(pg) == ['SM-004'] and 'qField=asset_tag' in pg.url and 'q=SM-004' in pg.url, (tags_shown(pg), pg.url))
+    pg.reload()
+    pg.wait_for_selector('[data-testid=assets-table]')
+    wait_list(pg)
+    check('assets/search: survives reload', tags_shown(pg) == ['SM-004'] and pg.input_value('[data-testid=search-text]') == 'SM-004')
+    pg.click('[data-testid=list-reset]')
+    wait_list(pg)
+    check('assets/reset: back to 4 rows, empty search, clean URL', len(tags_shown(pg)) == 4 and pg.input_value('[data-testid=search-text]') == '' and pg.url.rstrip('/').endswith('/assets'), pg.url)
+
+    # status chip
+    pg.click('[data-testid=chip-IN_USE]')
+    wait_list(pg)
+    check('assets/chip: IN_USE → 2 rows, chip pressed, state in URL', sorted(tags_shown(pg)) == ['SM-002', 'SM-003'] and pg.get_attribute('[data-testid=chip-IN_USE]', 'aria-pressed') == 'true' and 'state=IN_USE' in pg.url, (tags_shown(pg), pg.url))
+    check('assets/chip: other chips keep their counts', chip_n('IN_STOCK') == '2' and chip_n('all') == '4')
+
+    # sort by clicking the header twice
+    pg.locator('th[data-col=asset_tag] button').click()
+    wait_list(pg)
+    check('assets/sort: asset tag desc', tags_shown(pg) == ['SM-003', 'SM-002'] and 'order=desc' in pg.url, (tags_shown(pg), pg.url))
+    pg.locator('th[data-col=asset_tag] button').click()
+    wait_list(pg)
+    check('assets/sort: asset tag asc again', tags_shown(pg) == ['SM-002', 'SM-003'], tags_shown(pg))
+    pg.locator('th[data-col=holder] button').click()
+    wait_list(pg)
+    check('assets/sort: holder asc (Kim, Lee)', tags_shown(pg) == ['SM-002', 'SM-003'] and 'sort=holder' in pg.url, (tags_shown(pg), pg.url))
+
+    # column filter box (debounced)
+    pg.get_by_label('보유자 거르기', exact=True).fill('Lee')
+    pg.wait_for_timeout(900)
+    wait_list(pg)
+    check('assets/column filter: holder contains Lee → SM-003, f_holder in URL', tags_shown(pg) == ['SM-003'] and 'f_holder=Lee' in pg.url, (tags_shown(pg), pg.url))
+
+    # page size
+    pg.select_option('[data-testid=page-size]', '20')
+    wait_list(pg)
+    check('assets/page size: 20 in URL', 'pageSize=20' in pg.url, pg.url)
+
+    pg.click('[data-testid=list-reset]')
+    wait_list(pg)
+    check('assets/reset: everything cleared (rows, chip, filter box, URL)', len(tags_shown(pg)) == 4 and pg.get_attribute('[data-testid=chip-all]', 'aria-pressed') == 'true'
+          and pg.get_by_label('보유자 거르기', exact=True).input_value() == '' and pg.url.rstrip('/').endswith('/assets'), (tags_shown(pg), pg.url))
+    check('assets/link: asset tag links to detail', pg.locator('[data-testid=assets-table] tbody tr td:first-child a').first.get_attribute('href').startswith('/assets/'))
+    # password change entry point in the user menu
+    link = pg.locator('[data-testid=change-password-link]')
+    check('shell: change-password link in the top bar', link.count() == 1 and link.get_attribute('href') == '/change-password' and link.inner_text().strip() == '비밀번호 변경')
+    link.click()
+    pg.wait_for_url(BASE + '/change-password')
+    check('shell: change-password link opens the page', pg.locator('h1').count() >= 1)
+    ctx.close()
+
+    # a viewer has no supplier/price permission: no header, no filter box, no sort control, no field option
+    ctx, pg = new_page(browser)
+    login(pg, 'SMOKEA', 'viewer')
+    pg.goto('/assets')
+    pg.wait_for_selector('[data-testid=assets-table]')
+    wait_list(pg)
+    opts = pg.locator('[data-testid=search-field] option').all_inner_texts()
+    check('assets/viewer: no supplier/price column, filter or search option',
+          pg.locator('th[data-col=supplier]').count() == 0 and pg.locator('th[data-col=purchase_price]').count() == 0 and '공급업체' not in opts and len(tags_shown(pg)) == 4, opts)
+    ctx.close()
+
+    # peripherals list: toolbar + sortable headers + quantities
+    ctx, pg = new_page(browser)
+    login(pg, 'SMOKEA', 'admin')
+    pg.goto('/peripherals')
+    pg.wait_for_selector('[data-testid=stock-table]')
+    wait_list(pg)
+    n = pg.locator('[data-testid=stock-table] tbody tr').count()
+    pg.locator('th[data-col=on_hand] button').click()
+    wait_list(pg)
+    pg.locator('th[data-col=on_hand] button').click()
+    wait_list(pg)
+    qty = [int(x.replace(',', '')) for x in pg.locator('[data-testid=stock-table] tbody tr td:nth-child(5)').all_inner_texts()]
+    check('peripherals/sort: on hand desc', qty == sorted(qty, reverse=True) and 'sort=on_hand' in pg.url and 'order=desc' in pg.url, (qty, pg.url))
+    pg.select_option('[data-testid=search-field]', 'department')
+    pg.fill('[data-testid=search-text]', 'HR')
+    pg.get_by_role('button', name='검색', exact=True).click()
+    wait_list(pg)
+    depts = pg.locator('[data-testid=stock-table] tbody tr td:nth-child(4)').all_inner_texts()
+    check('peripherals/search: department HR only', depts and all(d.strip() == 'HR' for d in depts), depts)
+    check('peripherals/threshold column visible to admin', pg.locator('th[data-col=threshold]').count() == 1)
+    pg.click('[data-testid=list-reset]')
+    wait_list(pg)
+    check('peripherals/reset: all rows back', pg.locator('[data-testid=stock-table] tbody tr').count() == n)
+    ctx.close()
+
+
 # ───────────────────────── Part 1: stock history ─────────────────────────
 def test_stock_history(browser, ids):
     ctx, pg = new_page(browser)
@@ -458,6 +574,7 @@ def main():
         print('seeded business data', flush=True)
         browser = p.chromium.launch(executable_path=os.environ.get('E2E_CHROME', '/usr/bin/google-chrome'), args=['--no-sandbox'])
         test_dashboard(browser)
+        test_assets_toolbar(browser)
         test_stock_history(browser, ids)
         test_audit(browser)
         sweep(browser, 'en', ids)

@@ -81,7 +81,13 @@ async function systemSession() {
   for (const loginId of ['root', 'setup']) {
     const r = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/create-system-admin.ts', loginId, loginId === 'root' ? 'Root Admin' : 'Setup Admin'], { env: envFromFile(), encoding: 'utf8' });
     const temp = /\):\s*(\S+)\s*$/m.exec(r.stdout ?? '')?.[1];
-    if (r.status !== 0 || !temp) { console.log(`  system administrator "${loginId}" could not be created (it may already exist).`); continue; }
+    if (r.status !== 0 || !temp) {
+      console.log(`  system administrator "${loginId}" could not be created (it may already exist).`);
+      // On failure the script prints no password, so its output is safe to show.
+      const why = [r.error?.message, r.status !== 0 ? r.stderr : '', r.status !== 0 ? r.stdout : ''].filter(Boolean).join('\n').trim();
+      if (why) console.log(why.split(/\r?\n/).slice(-8).map((l) => '     ' + l).join('\n'));
+      continue;
+    }
     const password = await s.firstLogin(OPERATOR, loginId, temp);
     state.system = { loginId, password }; save();
     console.log(`  system administrator "${loginId}" created.`);

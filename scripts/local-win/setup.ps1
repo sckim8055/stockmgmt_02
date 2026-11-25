@@ -128,4 +128,4 @@ try {
 
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 Say 'Setup finished.'
-Write-Host 'Next:  1) create-admin.cmd (first time only)   2) start.cmd   3) open http://localhost:3000/login'
+Write-Host 'Next:  1) create-admin.cmd (first time only)   2) start.cmd   3) open http://localhost:3210/login'

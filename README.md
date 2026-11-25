@@ -35,7 +35,7 @@ export COOKIE_SECURE=false         # http 로컬 개발에서만 false
 npm run admin:create-system -- root "Root Admin"
 
 # 5) 실행
-npm run dev        # http://localhost:3000/login  → 기업코드: OPERATOR
+npm run dev        # http://localhost:3210/login  → 기업코드: OPERATOR
 ```
 
 윈도우 PowerShell에서는 `export A=B` 대신 `$env:A="B"` 를 쓴다.
@@ -48,10 +48,11 @@ npm run dev        # http://localhost:3000/login  → 기업코드: OPERATOR
 | --- | --- |
 | `setup.cmd` | Node 26(nodejs.org, SHA-256 확인)과 PostgreSQL 16(EnterpriseDB)을 `..\tools\` 에 내려받고, DB 를 만들고, 패키지 설치·마이그레이션·빌드를 한다. 다시 실행하면 끝난 단계는 건너뛰고 새 마이그레이션 적용과 빌드만 한다 |
 | `create-admin.cmd` | 첫 시스템 관리자(`root`)를 만든다. 임시 비밀번호가 창에 한 번 표시된다 |
-| `start.cmd` | DB 와 앱을 띄운다(`http://localhost:3000/login`). 창을 닫으면 둘 다 멈춘다 |
+| `start.cmd` | DB 와 앱을 띄운다(`http://localhost:3210/login`). 창을 닫으면 둘 다 멈춘다 |
+| `load-import.cmd` | `..\stockmgmt_import\load.json` 에 적힌 기업을 만들고(없을 때만) 사용자 지정 필드를 만든 뒤 직원·자산·주변기기 엑셀을 차례로 올린다. 앱의 API 로 로그인해서 하므로 권한 검사와 이력이 그대로 적용된다. 만든 계정의 비밀번호는 화면에 보이지 않고 `..\stockmgmt_data\secrets\accounts.txt` 에 적힌다. 다시 실행하면 끝난 단계는 건너뛴다 |
 
 - DB 파일·로그·자동 생성된 DB 비밀번호는 `..\stockmgmt_data\` 에 있다. 이 폴더를 지우면 데이터가 사라진다.
-- DB 는 5433, 앱은 3000 포트를 쓰고 둘 다 이 PC(127.0.0.1)에서만 접속된다.
+- DB 는 5433, 앱은 3210 포트를 쓰고 둘 다 이 PC(127.0.0.1)에서만 접속된다.
 - 저장소가 NTFS 가 아닌 드라이브(exFAT 등)에 있으면 운영용 빌드를 만들 수 없어 개발 모드로 실행된다(시험용). PostgreSQL 도 NTFS 만 지원하므로 실제로 쓸 때는 NTFS 드라이브로 옮긴다.
 - `.cmd` 는 그 실행 한 번에 한해 PowerShell 실행 정책을 우회한다(`-ExecutionPolicy Bypass`). 시스템 설정은 바꾸지 않는다.
 

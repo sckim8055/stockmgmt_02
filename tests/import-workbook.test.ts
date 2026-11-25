@@ -338,6 +338,20 @@ describe('기업 격리', () => {
 });
 
 describe('파일 형식과 한도', () => {
+  it('모든 시트를 합친 자료 행이 합계 한도를 넘으면 DB 처리 전에 거부한다(시트마다는 한도 안이어도)', async () => {
+    const before = await count('person', A.id);
+    const many = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => person(`${prefix}${i}`, `이름${i}`));
+    const res = await upload('admin', book([
+      { name: '직원', rows: [H.persons, ...many(2000, uniq('CAPA'))] },
+      { name: '주변기기', rows: [H.peripherals, ...Array.from({ length: 1001 }, (_, i) => peripheral(`CAP-${i}`, 1))] },
+    ]));
+    expect(res.status).toBe(422);
+    expect(res.data.committed).toBe(false);
+    expect(res.data.totalRows).toBe(3001);
+    expect(res.data.errors[0].message).toContain('3,000행까지');
+    expect(await count('person', A.id)).toBe(before);
+  });
+
   it('세 시트가 하나도 없으면 400, 깨진 파일은 400', async () => {
     const none = await upload('admin', book([{ name: '작성 안내', rows: [['x']] }, { name: 'Employees', rows: [H.persons, person('1', 'x')] }]));
     expect(none.status).toBe(400);

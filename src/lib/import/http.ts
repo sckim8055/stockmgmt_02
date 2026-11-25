@@ -2,7 +2,7 @@
 import type { Db } from '@/lib/db/context';
 import { badRequest, HttpError, json } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
-import { ASSET_STATUS_VALUES, IMPORT_COLUMNS, IMPORT_TITLES, runImport, runWorkbookImport, WORKBOOK_SHEETS, type ImportKind } from './run';
+import { ASSET_STATUS_VALUES, IMPORT_COLUMNS, IMPORT_TITLES, runImport, runWorkbookImport, WORKBOOK_MAX_ROWS, WORKBOOK_SHEETS, type ImportKind } from './run';
 import { readXlsx, readXlsxSheets, writeXlsx, XLSX_LIMITS, XLSX_MULTI_LIMITS, XlsxError, type Cell } from './xlsx';
 
 /** 본문을 다 받기까지 기다리는 시간. 일부러 천천히 보내는 요청이 자리를 오래 차지하지 못하게 한다. */
@@ -177,7 +177,7 @@ export function workbookTemplateResponse(): Response {
     ['한 시트의 한 행이라도 오류가 있으면 모든 시트가 반영되지 않습니다(전부 아니면 전무). 오류를 고친 뒤 다시 올려 주세요.'],
     ['시트 이름(직원, 자산, 주변기기)과 각 시트의 머리글(1행)은 바꾸지 마세요. 2행부터 한 행에 하나씩 입력합니다. 이 안내 시트는 읽지 않습니다.'],
     [
-      `한도: 파일 최대 5MB, 시트마다 최대 ${n(XLSX_LIMITS.rows - 1)}행, 최대 ${XLSX_LIMITS.columns}열, 셀 하나 최대 ${n(XLSX_LIMITS.cellChars)}자. ` +
+      `한도: 파일 최대 5MB, 시트마다 최대 ${n(XLSX_LIMITS.rows - 1)}행이고 모든 시트를 합쳐 최대 ${n(WORKBOOK_MAX_ROWS)}행, 최대 ${XLSX_LIMITS.columns}열, 셀 하나 최대 ${n(XLSX_LIMITS.cellChars)}자. ` +
         `시트 내용은 모두 합쳐 최대 ${XLSX_MULTI_LIMITS.sheetBytesTotal / 1024 / 1024}MB(압축을 푼 크기)입니다.`,
     ],
     ['시트마다 그 종류를 올리는 권한이 필요합니다(직원 업로드·자산 업로드·주변기기 입고). 권한이 없는 시트가 있으면 아무것도 반영되지 않습니다.'],

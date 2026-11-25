@@ -528,6 +528,9 @@ export async function runImport(
 
 // ─────────────────────────── 통합 파일(직원·자산·주변기기 시트를 한 파일로) ───────────────────────────
 
+/** 통합 파일 한 번에 올릴 수 있는 자료 행의 합계(모든 시트). 시트마다의 한도(2,000행)와 함께 걸린다. */
+export const WORKBOOK_MAX_ROWS = 3000;
+
 /** 통합 파일에서 읽는 시트. 이 순서로 처리한다(자산의 보유자사번이 같은 파일의 직원을 가리킬 수 있게). */
 export const WORKBOOK_SHEETS: { kind: ImportKind; sheet: string }[] = [
   { kind: 'persons', sheet: IMPORT_TITLES.persons },
@@ -598,6 +601,12 @@ export async function runWorkbookImport(
     result.sheets.push({ kind: s.kind, sheet: s.sheet, totalRows: rows.length, skipped: false });
   }
   result.totalRows = jobs.reduce((n, j) => n + j.rows.length, 0);
+  // 한 번의 반영이 잠금을 쥐는 시간을 종류별 업로드(한 번에 2,000행)와 비슷한 수준으로 묶는다.
+  // 업로드는 프로세스에서 한 번에 하나만 처리하므로, 이 한도가 없으면 큰 통합 파일 하나가 다른 기업의 업로드를 그만큼 오래 막는다.
+  if (result.totalRows > WORKBOOK_MAX_ROWS) {
+    errors.push({ row: 1, message: `자료가 너무 많습니다. 통합 파일은 모든 시트를 합쳐 ${WORKBOOK_MAX_ROWS.toLocaleString('ko-KR')}행까지 올릴 수 있습니다(현재 ${result.totalRows.toLocaleString('ko-KR')}행). 파일을 나누어 올려 주세요.` });
+    return result;
+  }
   if (errors.length) {
     result.errors = errors.slice(0, MAX_REPORTED_ERRORS);
     return result;

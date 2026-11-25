@@ -485,3 +485,86 @@ describe('6단계 검토에서 드러난, 테스트가 없던 보장', () => {
     expect((await upload(importAssets as Handler, 'admin', xlsx([H.assets, asset(uniq('IA-'))]), 'preview')).status).toBe(200);
   });
 });
+
+describe('자산 업로드: 상태 열과 사용자 지정 필드 열', () => {
+  const state = (tag: string) => one('SELECT a.id, a.state, a.substate, a.holder_person_id IS NOT NULL AS held, a.custom FROM app.asset a WHERE a.company_id = $1 AND a.asset_tag = $2', [A.id, tag]);
+  const types = async (assetId: string) => (await (await owner()).query('SELECT type FROM app.asset_txn WHERE asset_id = $1 ORDER BY created_at, seq', [assetId])).rows.map((r) => r.type);
+
+  it('상태를 적으면 등록 뒤 그 처리를 차례로 적용하고 이력이 남는다(상태를 직접 써넣지 않는다)', async () => {
+    await upload(importPersons as Handler, 'admin', xlsx([H.persons, ['ST-1', '상태보유자', null, null]]));
+    const t = { stock: uniq('ST-'), disposed: uniq('ST-'), sold: uniq('ST-'), repair: uniq('ST-'), missing: uniq('ST-'), defective: uniq('ST-') };
+    const done = await upload(importAssets as Handler, 'admin', xlsx([
+      H.assets,
+      asset(t.stock, { 12: '재고' }),
+      asset(t.disposed, { 12: 'Disposed' }), // 영문·대소문자도 받는다
+      asset(t.sold, { 12: '매각' }),
+      asset(t.repair, { 7: 'ST-1', 12: '수리 중' }), // 보유자를 유지한 채 수리 입고
+      asset(t.missing, { 12: '분실' }),
+      asset(t.defective, { 12: '불량' }),
+    ]));
+    expect(done.data).toMatchObject({ committed: true, totalRows: 6 });
+    expect(await state(t.stock)).toMatchObject({ state: 'IN_STOCK', substate: 'AVAILABLE' });
+    const disposed = await state(t.disposed);
+    expect(disposed).toMatchObject({ state: 'RETIRED', substate: 'DISPOSED', held: false });
+    expect(await types(disposed.id)).toEqual(['REGISTER', 'RETIRE', 'DISPOSE']);
+    expect(await state(t.sold)).toMatchObject({ state: 'RETIRED', substate: 'SOLD' });
+    const repair = await state(t.repair);
+    expect(repair).toMatchObject({ state: 'MAINTENANCE', held: true });
+    expect(await types(repair.id)).toEqual(['REGISTER', 'ASSIGN', 'REPAIR_IN']);
+    expect(await state(t.missing)).toMatchObject({ state: 'MISSING' });
+    expect(await state(t.defective)).toMatchObject({ state: 'IN_STOCK', substate: 'DEFECTIVE' });
+  });
+
+  it('알 수 없는 상태, 보유자와 맞지 않는 상태는 행 오류이고 아무것도 반영하지 않는다', async () => {
+    const before = await count('asset', A.id);
+    const res = await upload(importAssets as Handler, 'admin', xlsx([
+      H.assets,
+      asset(uniq('ST-'), { 12: '어딘가' }),
+      asset(uniq('ST-'), { 7: 'ST-1', 12: '폐기' }),
+      asset(uniq('ST-'), { 12: '사용중' }),
+      asset(uniq('ST-')),
+    ]));
+    expect(res.status).toBe(422);
+    expect(res.data.errors.map((e: { row: number }) => e.row)).toEqual([2, 3, 4]);
+    expect(res.data.errors[0].message).toContain('알 수 없는 값');
+    expect(res.data.errors[1].message).toContain('보유자사번과 함께 쓸 수 없습니다');
+    expect(res.data.errors[2].message).toContain('보유자사번이 있어야');
+    expect(await count('asset', A.id)).toBe(before);
+  });
+
+  it('상태 열은 그 처리를 할 권한이 있어야 쓸 수 있다', async () => {
+    const before = await count('asset', A.id);
+    const retire = await upload(importAssets as Handler, 'importer', xlsx([H.assets, asset(uniq('ST-'), { 12: '폐기' })]));
+    expect(retire.status).toBe(422);
+    expect(retire.data.errors[0].message).toContain('권한이 없습니다');
+    const defective = await upload(importAssets as Handler, 'importer', xlsx([H.assets, asset(uniq('ST-'), { 12: '불량' })]));
+    expect(defective.data.errors[0].message).toContain('권한이 없습니다');
+    expect(await count('asset', A.id)).toBe(before);
+    // 재고(처리 없음)는 권한 없이도 적을 수 있다.
+    expect((await upload(importAssets as Handler, 'importer', xlsx([H.assets, asset(uniq('ST-'), { 12: '재고' })]))).data.committed).toBe(true);
+  });
+
+  it('사용자 지정 필드는 표시 이름이나 키를 머리글로 한 열로 올린다. 제한 필드는 권한이 있어야 한다', async () => {
+    const o = await owner();
+    for (const [key, label, type, restricted] of [['mac', 'MAC 주소', 'text', false], ['cap_no', '회계번호', 'number', false], ['checked', '실사', 'boolean', false], ['svc_start', '서비스시작', 'date', false], ['secret_note', '비밀메모', 'text', true]] as const) {
+      await o.query('INSERT INTO app.custom_field_def (company_id, key, label, data_type, is_restricted) VALUES ($1, $2, $3, $4, $5)', [A.id, key, label, type, restricted]);
+    }
+    // 다른 기업의 같은 이름 필드는 이 기업의 열이 되지 않는다.
+    await o.query("INSERT INTO app.custom_field_def (company_id, key, label, data_type) VALUES ($1, 'only_b', 'B전용', 'text')", [B.id]);
+    const tag = uniq('CF-');
+    const head = [...H.assets, 'MAC 주소', 'cap_no', '실사', '서비스시작'];
+    const done = await upload(importAssets as Handler, 'admin', xlsx([head, [...asset(tag), null, 'AA:BB:CC:00:11:22', 127001, 'Y', '2022.2.4'], [...asset(uniq('CF-')), null, null, null, null, null]]));
+    expect(done.data).toMatchObject({ committed: true, totalRows: 2 });
+    expect((await state(tag)).custom).toEqual({ mac: 'AA:BB:CC:00:11:22', cap_no: 127001, checked: true, svc_start: '2022-02-04' });
+
+    const unknown = await upload(importAssets as Handler, 'admin', xlsx([[...H.assets, 'B전용'], [...asset(uniq('CF-')), null, 'x']]));
+    expect(unknown.data.errors[0].message).toContain('알 수 없는 열');
+    const badValue = await upload(importAssets as Handler, 'admin', xlsx([[...H.assets, '실사', 'cap_no'], [...asset(uniq('CF-')), null, '글쎄', 'abc']]));
+    expect(badValue.data.errors.map((e: { message: string }) => e.message).join(' ')).toMatch(/예\/아니오.*숫자가 아닙니다|숫자가 아닙니다.*예\/아니오/);
+    const restricted = await upload(importAssets as Handler, 'importer', xlsx([[...H.assets, '비밀메모'], [...asset(uniq('CF-')), null, '몰래']]));
+    expect(restricted.status).toBe(422);
+    expect(restricted.data.errors[0].message).toContain('제한된 사용자 지정 필드');
+    // 그 열을 비워 두면 권한 없이도 올릴 수 있다.
+    expect((await upload(importAssets as Handler, 'importer', xlsx([[...H.assets, '비밀메모'], [...asset(uniq('CF-')), null, null]]))).data.committed).toBe(true);
+  });
+});

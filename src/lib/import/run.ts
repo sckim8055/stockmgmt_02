@@ -9,6 +9,7 @@
 //  - 이미 있는 자산 태그·사번은 오류로 처리한다(기존 자료를 덮어쓰지 않는다).
 import type { Db } from '@/lib/db/context';
 import { actOnAsset, createAsset } from '@/lib/assets/assets';
+import type { AssetAction } from '@/lib/assets/transitions';
 import { deferEvaluation, flushEvaluation } from '@/lib/alerts/thresholds';
 import { writeAudit } from '@/lib/auth/audit';
 import { actorPermissions, lockCompanyAdministration, permKey } from '@/lib/authz/grants';
@@ -17,6 +18,7 @@ import { HttpError } from '@/lib/http/errors';
 import type { Actor } from '@/lib/http/route';
 import { createCategory } from '@/lib/master/categories';
 import { lockMasterData } from '@/lib/master/common';
+import { listCustomFields, type CustomDataType } from '@/lib/master/custom-fields';
 import { createDepartment } from '@/lib/master/departments';
 import { createModel } from '@/lib/master/models';
 import { createPerson } from '@/lib/master/persons';
@@ -30,7 +32,7 @@ interface Column {
   key: string;
   header: string;
   required?: boolean;
-  type: 'text' | 'date' | 'number' | 'integer';
+  type: 'text' | 'date' | 'number' | 'integer' | 'boolean';
   max?: number;
   /** 줄바꿈을 받는 자유 입력 칸 */
   multiline?: boolean;
@@ -59,6 +61,7 @@ export const IMPORT_COLUMNS: Record<ImportKind, Column[]> = {
     { key: 'purchasePrice', header: '구매가', type: 'number', hint: '숫자만. 입력 권한이 있어야 합니다.' },
     { key: 'supplier', header: '공급업체', type: 'text', max: 200, hint: '입력 권한이 있어야 합니다.' },
     { key: 'warrantyEnd', header: '보증만료일', type: 'date', hint: 'YYYY-MM-DD' },
+    { key: 'status', header: '상태', type: 'text', max: 20, hint: '비우면 재고(보유자사번이 있으면 사용중). 재고·사용중·불량·수리중·분실·퇴역·폐기·매각·기증 중 하나. 등록한 뒤 그 상태로 바꾸며 이력이 남습니다. 불량·퇴역·폐기·매각·기증은 보유자사번과 함께 쓸 수 없습니다.' },
   ],
   peripherals: [
     { key: 'category', header: '카테고리', required: true, type: 'text', max: 80, hint: '필수. 예: 마우스' },
@@ -77,6 +80,62 @@ const IMPORT_CREATE_RESOURCE: Record<ImportKind, string | null> = { persons: 'ma
 
 export const IMPORT_TITLES: Record<ImportKind, string> = { persons: '직원', assets: '자산', peripherals: '주변기기' };
 
+/**
+ * 자산 업로드의 "상태" 열. 등록(재고) 뒤에 화면에서 하는 것과 같은 처리를 차례로 적용한다.
+ * 그래서 상태 전이 규칙·권한·이력이 그대로 적용된다(상태를 직접 써넣지 않는다).
+ */
+interface StatusPlan {
+  /** 보유자가 필요하다 / 있으면 안 된다 / 상관없다 */
+  holder: 'required' | 'forbidden' | 'any';
+  steps: { action: AssetAction; disposal?: 'DISPOSED' | 'SOLD' | 'DONATED' }[];
+}
+const STATUS_PLANS: Record<string, StatusPlan> = {
+  재고: { holder: 'forbidden', steps: [] },
+  사용중: { holder: 'required', steps: [] },
+  불량: { holder: 'forbidden', steps: [{ action: 'MARK_DEFECTIVE' }] },
+  수리중: { holder: 'any', steps: [{ action: 'REPAIR_IN' }] },
+  분실: { holder: 'any', steps: [{ action: 'MARK_MISSING' }] },
+  퇴역: { holder: 'forbidden', steps: [{ action: 'RETIRE' }] },
+  폐기: { holder: 'forbidden', steps: [{ action: 'RETIRE' }, { action: 'DISPOSE', disposal: 'DISPOSED' }] },
+  매각: { holder: 'forbidden', steps: [{ action: 'RETIRE' }, { action: 'DISPOSE', disposal: 'SOLD' }] },
+  기증: { holder: 'forbidden', steps: [{ action: 'RETIRE' }, { action: 'DISPOSE', disposal: 'DONATED' }] },
+};
+const STATUS_ALIASES: Record<string, string> = {
+  in_stock: '재고', instock: '재고', in_use: '사용중', inuse: '사용중', defective: '불량', maintenance: '수리중',
+  missing: '분실', retired: '퇴역', disposed: '폐기', sold: '매각', donated: '기증',
+};
+function statusPlan(value: string | null): { name: string; plan: StatusPlan } | null {
+  if (!value) return null;
+  const key = value.replace(/\s/g, '').toLowerCase();
+  const name = STATUS_ALIASES[key] ?? key;
+  const plan = STATUS_PLANS[name];
+  if (!plan) throw new HttpError(400, 'BAD_REQUEST', `상태: 알 수 없는 값입니다 (${value.slice(0, 20)}). ${Object.keys(STATUS_PLANS).join('·')} 중 하나를 적으세요.`);
+  return { name, plan };
+}
+/** 상태 처리에 필요한 권한 리소스(화면에서 그 처리를 할 때와 같다). */
+const STATUS_STEP_RESOURCE: Partial<Record<AssetAction, string>> = {
+  MARK_DEFECTIVE: 'asset.maintain', REPAIR_IN: 'asset.maintain', MARK_MISSING: 'asset.retire', RETIRE: 'asset.retire', DISPOSE: 'asset.retire',
+};
+
+/** 사용자 지정 필드 열. 머리글은 필드의 표시 이름 또는 키. 값 키는 `custom:<key>`. */
+const CUSTOM_PREFIX = 'custom:';
+export interface CustomColumnDef {
+  key: string;
+  label: string;
+  data_type: CustomDataType;
+}
+function customColumns(defs: CustomColumnDef[]): (Column & { alt: string })[] {
+  return defs.map((d) => ({
+    key: CUSTOM_PREFIX + d.key,
+    header: d.label,
+    alt: d.key,
+    type: d.data_type === 'text' ? 'text' : d.data_type === 'number' ? 'number' : d.data_type,
+    max: 500,
+    multiline: d.data_type === 'text',
+    hint: '사용자 지정 필드',
+  }));
+}
+
 export interface RowError {
   /** 엑셀의 행 번호(머리글이 1행) */
   row: number;
@@ -92,19 +151,21 @@ export interface ImportResult {
   created: { departments: string[]; categories: string[]; models: string[] };
 }
 
-type Values = Record<string, string | number | null>;
+type Values = Record<string, string | number | boolean | null>;
 
 const headerKey = (v: Cell) => String(v ?? '').replace(/[\s*]/g, '').toLowerCase();
 
 /** 머리글을 읽어 열 위치를 정하고, 자료 행을 값 객체로 바꾼다. 형식 오류는 행 오류로 모은다. */
-function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[]): { row: number; values: Values }[] {
-  const columns = IMPORT_COLUMNS[kind];
+function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[], customDefs: CustomColumnDef[] = []): { row: number; values: Values }[] {
+  // 기본 열이 먼저다. 사용자 지정 필드의 이름이 기본 열과 같으면 기본 열로 읽는다.
+  const extra = customColumns(customDefs);
+  const columns: Column[] = [...IMPORT_COLUMNS[kind], ...extra];
   const header = sheet[0] ?? [];
   const position = new Map<string, number>();
   header.forEach((cell, index) => {
     const key = headerKey(cell);
     if (!key) return;
-    const col = columns.find((c) => headerKey(c.header) === key);
+    const col = columns.find((c) => headerKey(c.header) === key) ?? extra.find((c) => headerKey(c.alt) === key);
     if (!col) errors.push({ row: 1, message: `알 수 없는 열입니다: ${String(cell).slice(0, 40)}` });
     else if (position.has(col.key)) errors.push({ row: 1, message: `열이 중복되었습니다: ${col.header}` });
     else position.set(col.key, index);
@@ -144,6 +205,11 @@ function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[]): { row
         const iso = typeof raw === 'number' ? serialToIsoDate(raw) : typeof raw === 'string' ? raw.trim().replace(/[./]/g, '-').replace(/-(\d)(?=-|$)/g, '-0$1') : null;
         if (!isIsoDate(iso)) fail(`${col.header}: 날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)`);
         values[col.key] = iso;
+      } else if (col.type === 'boolean') {
+        const word = String(raw).trim().toLowerCase();
+        const yes = ['true', 'y', 'yes', '예', 'o', '1'].includes(word);
+        if (!yes && !['false', 'n', 'no', '아니오', 'x', '0'].includes(word)) fail(`${col.header}: 예/아니오(Y/N)로 적으세요.`);
+        values[col.key] = yes;
       } else {
         const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(/,/g, '').trim()) : NaN;
         if (!Number.isFinite(n)) fail(`${col.header}: 숫자가 아닙니다.`);
@@ -230,7 +296,7 @@ class MasterData {
   }
 }
 
-const text = (v: string | number | null | undefined): string | null => (typeof v === 'string' && v !== '' ? v : null);
+const text = (v: string | number | boolean | null | undefined): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
 async function importRow(db: Db, actor: Actor, access: DataAccess, master: MasterData, kind: ImportKind, v: Values): Promise<void> {
   const department = text(v.department);
@@ -261,6 +327,11 @@ async function importRow(db: Db, actor: Actor, access: DataAccess, master: Maste
     holderId = person.rows[0]?.id ?? null;
     if (!holderId) throw new HttpError(400, 'BAD_REQUEST', `보유자사번: 등록되지 않은 사번입니다 (${holderNo}). 직원을 먼저 올려 주세요.`);
   }
+  const status = statusPlan(text(v.status));
+  if (status?.plan.holder === 'required' && !holderId) throw new HttpError(400, 'BAD_REQUEST', `상태: ${status.name}은(는) 보유자사번이 있어야 합니다.`);
+  if (status?.plan.holder === 'forbidden' && holderId) throw new HttpError(400, 'BAD_REQUEST', `상태: ${status.name}은(는) 보유자사번과 함께 쓸 수 없습니다. 보유자사번을 비우세요.`);
+  const custom: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(v)) if (key.startsWith(CUSTOM_PREFIX) && value !== null) custom[key.slice(CUSTOM_PREFIX.length)] = value;
   const modelId = await master.model('ASSET', v.category as string, v.manufacturer as string, v.model as string);
   const supplier = text(v.supplier);
   const assetId = await createAsset(db, actor, access, {
@@ -274,8 +345,13 @@ async function importRow(db: Db, actor: Actor, access: DataAccess, master: Maste
     ...(price !== null ? { purchasePrice: price } : {}),
     ...(supplier !== null ? { supplier } : {}),
     warrantyEnd: text(v.warrantyEnd),
+    // 값이 있는 필드만 넣는다(제한 필드 권한이 없는 사람도 그 열을 비워 두면 올릴 수 있게).
+    ...(Object.keys(custom).length ? { custom } : {}),
   });
   if (holderId) await actOnAsset(db, actor, access, assetId, 'ASSIGN', { holderPersonId: holderId, note: '엑셀 업로드' });
+  for (const step of status?.plan.steps ?? []) {
+    await actOnAsset(db, actor, access, assetId, step.action, { note: '엑셀 업로드', ...(step.disposal ? { disposal: step.disposal } : {}) });
+  }
 }
 
 /** 되돌리기 위한 신호. 쿼리 오류가 아니다. */
@@ -295,7 +371,11 @@ export async function runImport(
   options: { commit: boolean },
 ): Promise<ImportResult> {
   const errors: RowError[] = [];
-  const rows = parseRows(kind, sheet, errors);
+  // 자산은 그 기업의 사용자 지정 필드를 열로 받는다. 머리글을 읽으려면 정의가 먼저 필요하다.
+  const customDefs: CustomColumnDef[] = kind === 'assets'
+    ? (await tenant((db) => listCustomFields(db, actor))).filter((d) => d.is_active).map((d) => ({ key: d.key, label: d.label, data_type: d.data_type }))
+    : [];
+  const rows = parseRows(kind, sheet, errors, customDefs);
   const result: ImportResult = { kind, committed: false, totalRows: rows.length, errors, created: { departments: [], categories: [], models: [] } };
   if (errors.length) {
     result.errors = errors.slice(0, MAX_REPORTED_ERRORS);
@@ -324,6 +404,25 @@ export async function runImport(
       if (kind === 'assets' && perms !== null && !perms.has(permKey('asset.assign', 'execute')) && rows.some((r) => r.values.holderEmployeeNo)) {
         errors.push({ row: 1, message: '보유자사번을 적으려면 자산 배정 권한이 필요합니다. 그 열을 비우고 올리거나 권한을 요청하세요.' });
         throw new RollbackImport();
+      }
+      if (kind === 'assets' && perms !== null) {
+        // 상태 열은 화면에서 그 처리를 할 권한이 있어야 쓸 수 있다.
+        const needed = new Set<string>();
+        for (const r of rows) {
+          let plan: StatusPlan | undefined;
+          try {
+            plan = statusPlan(text(r.values.status))?.plan;
+          } catch {
+            continue; // 알 수 없는 값은 행 오류로 보고된다.
+          }
+          for (const step of plan?.steps ?? []) needed.add(STATUS_STEP_RESOURCE[step.action]!);
+        }
+        for (const resource of needed) {
+          if (!perms.has(permKey(resource, 'execute'))) {
+            errors.push({ row: 1, message: `상태 열에 적은 처리를 할 권한이 없습니다 (${resource === 'asset.retire' ? '분실·퇴역·폐기' : '불량·수리'}). 그 값을 지우고 올리거나 권한을 요청하세요.` });
+            throw new RollbackImport();
+          }
+        }
       }
       const master = new MasterData(db, actor, perms);
       // 한계 수량 판정은 행마다 하지 않고 끝에 한 번만 한다(행마다 하면 한계 수량 잠금을 업로드 내내 잡게 된다).

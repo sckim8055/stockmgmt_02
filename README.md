@@ -49,6 +49,7 @@ npm run dev        # http://localhost:3000/login  → 기업코드: OPERATOR
 | `setup.cmd` | Node 26(nodejs.org, SHA-256 확인)과 PostgreSQL 16(EnterpriseDB)을 `..\tools\` 에 내려받고, DB 를 만들고, 패키지 설치·마이그레이션·빌드를 한다. 다시 실행하면 끝난 단계는 건너뛰고 새 마이그레이션 적용과 빌드만 한다 |
 | `create-admin.cmd` | 첫 시스템 관리자(`root`)를 만든다. 임시 비밀번호가 창에 한 번 표시된다 |
 | `start.cmd` | DB 와 앱을 띄운다(`http://localhost:3000/login`). 창을 닫으면 둘 다 멈춘다 |
+| `load-import.cmd` | `..\stockmgmt_import\load.json` 에 적힌 기업을 만들고(없을 때만) 사용자 지정 필드를 만든 뒤 직원·자산·주변기기 엑셀을 차례로 올린다. 앱의 API 로 로그인해서 하므로 권한 검사와 이력이 그대로 적용된다. 만든 계정의 비밀번호는 화면에 보이지 않고 `..\stockmgmt_data\secrets\accounts.txt` 에 적힌다. 다시 실행하면 끝난 단계는 건너뛴다 |
 
 - DB 파일·로그·자동 생성된 DB 비밀번호는 `..\stockmgmt_data\` 에 있다. 이 폴더를 지우면 데이터가 사라진다.
 - DB 는 5433, 앱은 3000 포트를 쓰고 둘 다 이 PC(127.0.0.1)에서만 접속된다.

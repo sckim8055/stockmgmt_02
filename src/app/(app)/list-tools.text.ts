@@ -25,6 +25,10 @@ export const TEXT = dict({
     page: (p: number, last: number) => `${p} / ${last} 쪽`,
     prev: '이전',
     next: '다음',
+    resizeColumn: (label: string) => `${label} 열 너비`,
+    resizeHint: '끌어서 열 너비를 바꿉니다. 두 번 누르면 기본 너비로 돌아갑니다. 키보드: ←/→ 로 조절, Home 으로 기본 너비.',
+    resetWidths: '열 너비 초기화',
+    resetWidthsHint: '이 목록의 모든 열을 기본 너비로 돌립니다(검색·필터는 그대로).',
   },
   en: {
     req: 'REQ',
@@ -48,6 +52,10 @@ export const TEXT = dict({
     page: (p: number, last: number) => `Page ${p} of ${last}`,
     prev: 'Previous',
     next: 'Next',
+    resizeColumn: (label: string) => `${label} column width`,
+    resizeHint: 'Drag to resize the column. Double-click to restore the default width. Keyboard: Left/Right to resize, Home for the default width.',
+    resetWidths: 'Reset column widths',
+    resetWidthsHint: 'Restore the default width of every column in this list (search and filters stay).',
   },
   zh: {
     req: '必填',
@@ -71,5 +79,9 @@ export const TEXT = dict({
     page: (p: number, last: number) => `第 ${p} / ${last} 页`,
     prev: '上一页',
     next: '下一页',
+    resizeColumn: (label: string) => `${label}列宽`,
+    resizeHint: '拖动可调整列宽，双击恢复默认宽度。键盘：←/→ 调整，Home 恢复默认宽度。',
+    resetWidths: '重置列宽',
+    resetWidthsHint: '将此列表所有列恢复为默认宽度（搜索和筛选不变）。',
   },
 });

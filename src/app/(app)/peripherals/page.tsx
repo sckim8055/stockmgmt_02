@@ -98,6 +98,8 @@ function StockInner() {
   const canAdjust = can('peripheral.adjust', 'execute');
   const canHistory = can('history.stock', 'read');
   const hasActions = canIssue || canAdjust || canHistory;
+  // 작업 열의 기본 너비: 보이는 단추 수에 맞춘다(영어 문구 기준, 단추 하나 약 66px + 칸 여백).
+  const actionsWidth = 24 + (canIssue ? 2 * 66 : 0) + (canAdjust ? 2 * 70 : 0) + (canHistory ? 64 : 0);
   const categoryId = get('categoryId');
   const items = data?.items ?? [];
   const sort = (STOCK_SORT_KEYS as readonly string[]).includes(get('sort')) ? get('sort') : 'category';
@@ -112,10 +114,11 @@ function StockInner() {
   ];
 
   const columns: Column<StockRow>[] = [
-    { id: 'category', label: T.colCategory, required: true, sort: 'category', filter: 'category', sticky: true, cell: (s) => s.category_name },
-    { id: 'manufacturer', label: T.colManufacturer, required: true, sort: 'manufacturer', filter: 'manufacturer', cell: (s) => s.manufacturer },
+    { id: 'category', label: T.colCategory, required: true, sort: 'category', filter: 'category', sticky: true, width: 140, cell: (s) => s.category_name },
+    { id: 'manufacturer', label: T.colManufacturer, required: true, sort: 'manufacturer', filter: 'manufacturer', width: 130, cell: (s) => s.manufacturer },
     {
-      id: 'model', label: T.colModelName, required: true, sort: 'model', filter: 'model',
+      id: 'model', label: T.colModelName, required: true, sort: 'model', filter: 'model', width: 220,
+      title: (s) => (s.model_active ? s.model_name : `${s.model_name} ${T.inactive}`),
       cell: (s) => (
         <>
           {s.model_name}
@@ -123,16 +126,19 @@ function StockInner() {
         </>
       ),
     },
-    { id: 'department', label: T.colDept, required: false, sort: 'department', filter: 'department', cell: (s) => s.department_name },
+    { id: 'department', label: T.colDept, required: false, sort: 'department', filter: 'department', width: 130, cell: (s) => s.department_name },
     {
-      id: 'on_hand', label: T.colOnHand, required: true, sort: 'on_hand', align: 'right', nowrap: true,
+      id: 'on_hand', label: T.colOnHand, required: true, sort: 'on_hand', align: 'right', width: 100,
+      title: (s) => F.num(s.on_hand_qty),
       cell: (s) => <span className={s.on_hand_qty === 0 ? 'qty qty--zero' : 'qty'}>{F.num(s.on_hand_qty)}</span>,
     },
-    { id: 'on_loan', label: T.colOnLoan, required: false, sort: 'on_loan', align: 'right', nowrap: true, cell: (s) => <span className="qty">{F.num(s.on_loan_qty)}</span> },
+    { id: 'on_loan', label: T.colOnLoan, required: false, sort: 'on_loan', align: 'right', width: 100, title: (s) => F.num(s.on_loan_qty), cell: (s) => <span className="qty">{F.num(s.on_loan_qty)}</span> },
   ];
   if (canThreshold) {
     columns.push({
-      id: 'threshold', label: T.colThreshold, required: false, nowrap: true,
+      id: 'threshold', label: T.colThreshold, required: false, width: 210,
+      // 칸 안의 요소가 한계 수량마다의 설명을 title 로 갖는다.
+      title: () => undefined,
       cell: (s) => {
         const ts = thresholdsFor(s, thresholdList);
         if (ts.length === 0) return <span style={{ color: 'var(--text-muted)' }}>{T.thresholdNone}</span>;
@@ -147,10 +153,11 @@ function StockInner() {
       },
     });
   }
-  columns.push({ id: 'updated_at', label: T.colUpdated, required: false, sort: 'updated_at', nowrap: true, cell: (s) => <time dateTime={s.updated_at}>{F.dateTime(s.updated_at)}</time> });
+  columns.push({ id: 'updated_at', label: T.colUpdated, required: false, sort: 'updated_at', width: 170, title: (s) => F.dateTime(s.updated_at), cell: (s) => <time dateTime={s.updated_at}>{F.dateTime(s.updated_at)}</time> });
   if (hasActions) {
     columns.push({
-      id: 'actions', label: T.colActions, nowrap: true,
+      id: 'actions', label: T.colActions, width: actionsWidth,
+      title: () => undefined,
       cell: (s) => (
         <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
           {canIssue ? (
@@ -233,6 +240,7 @@ function StockInner() {
         <>
           <ListTable
             testId="stock-table"
+            listKey="peripherals"
             caption={T.total(data.total)}
             columns={columns}
             rows={items}
@@ -243,8 +251,8 @@ function StockInner() {
             filterValue={(name) => get(`${FILTER_PARAM}${name}`)}
             onFilter={(name, v) => setParams({ [`${FILTER_PARAM}${name}`]: v || null })}
             empty={T.empty}
+            footer={<ListPager page={data.page} total={data.total} pageSize={data.pageSize} onPage={(p) => setParams({ page: String(p) }, true)} />}
           />
-          <ListPager page={data.page} total={data.total} pageSize={data.pageSize} onPage={(p) => setParams({ page: String(p) }, true)} />
         </>
       ) : null}
 

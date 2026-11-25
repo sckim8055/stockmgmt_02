@@ -526,6 +526,59 @@ input[type='radio']:focus-visible { outline-offset: 2px; box-shadow: none; }
 .data-table > thead > tr.filter-row > th.col-sticky { background: var(--surface-solid); }
 .data-table > tbody > tr:nth-child(even) > td.col-sticky { background-color: var(--surface-solid); }
 .data-table > tbody > tr:hover > td.col-sticky { background-color: var(--surface-solid); }
+
+/* 고정 너비 목록 표: 한 행은 한 줄. 넘치는 글자는 … 로 자르고(칸의 title 에 전체 값) 열 너비는 colgroup 이 정한다. */
+.data-table--fixed { table-layout: fixed; }
+.data-table--fixed > tbody > tr > td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.data-table--fixed > tbody > tr > td .badge { vertical-align: middle; }
+.data-table--fixed > tbody > tr > td.data-table__empty > span { position: sticky; left: 12px; }
+.data-table--fixed > thead > tr > th.th-head { position: relative; overflow: hidden; }
+.data-table--fixed > thead > tr > th.th-head.col-sticky { position: sticky; }
+.th-head__inner { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; vertical-align: middle; }
+.th-head__inner > .req-mark { flex-shrink: 0; }
+.th-sort { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; text-align: inherit; }
+.th-sort:focus-visible { outline-offset: -2px; }
+.th-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-sort__mark { flex-shrink: 0; }
+.data-table--fixed > thead > tr.filter-row input,
+.data-table--fixed > thead > tr.filter-row select { min-width: 0; }
+
+/* 열 너비 손잡이: 머리 칸 오른쪽 끝 8px. 올리거나 초점을 두면 선이 보인다. */
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 1;
+}
+.col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+.col-resizer:hover::after { background: var(--border-control); }
+.col-resizer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.col-resizer:focus-visible::after,
+html.is-col-resizing .col-resizer:active::after { background: var(--focus); }
+html.is-col-resizing,
+html.is-col-resizing * { cursor: col-resize !important; user-select: none !important; -webkit-user-select: none !important; }
+
+.list-table__foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+
 .qty { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
 .qty--zero { color: var(--danger-text); }
 

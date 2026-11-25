@@ -568,6 +568,250 @@ def test_user_default_and_storage(browser):
     ctx.close()
 
 
+# ───────────────────────── list tables: one line per row, column widths (drag / keyboard / reset / storage) ─────────────────────────
+LONG_MODEL = 'Latitude E7440 Ultrabook Business Edition 14-inch (2024 refresh)'
+LONG_LOCATION = 'Seoul HQ 12F, East Wing, Server Room B, Rack 07, Shelf 3'
+LONG_REMARK = 'Replaced keyboard and battery under extended warranty; owner asked to keep the docking station and the spare charger'
+LONG_PERIPH = 'Wireless Ergonomic Keyboard and Mouse Combo Deluxe Edition'
+WIDTH_KEY = 'stockmgmt.colWidths.'
+
+ROWS_JS = r"""(sel) => {
+  const t = document.querySelector(sel);
+  const trs = [...t.tBodies[0].rows];
+  const heights = trs.map((r) => Math.round(r.getBoundingClientRect().height * 10) / 10);
+  const td = trs[0].cells[1];
+  const cs = getComputedStyle(td);
+  const one = parseFloat(cs.lineHeight) + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth);
+  const wrapping = [];
+  for (const r of trs) for (const c of r.cells) if (getComputedStyle(c).whiteSpace !== 'nowrap') wrapping.push(c.textContent.slice(0, 30));
+  const heads = [...t.tHead.rows[0].cells].map((th) => Math.round(th.getBoundingClientRect().height * 10) / 10);
+  const headLine = parseFloat(getComputedStyle(t.tHead.rows[0].cells[0]).lineHeight);
+  return { heights, one: Math.round(one * 10) / 10, wrapping, heads, headLine, tableW: Math.round(t.getBoundingClientRect().width),
+           colSum: [...t.querySelectorAll('colgroup col')].reduce((n, c) => n + parseFloat(c.style.width), 0), cols: t.querySelectorAll('colgroup col').length,
+           ths: t.tHead.rows[0].cells.length };
+}"""
+
+CELL_JS = r"""([sel, rowText, col]) => {
+  const t = document.querySelector(sel);
+  const idx = [...t.tHead.rows[0].cells].findIndex((th) => th.dataset.col === col);
+  const row = [...t.tBodies[0].rows].find((r) => r.textContent.includes(rowText));
+  if (!row || idx < 0) return null;
+  const td = row.cells[idx];
+  return { scroll: td.scrollWidth, client: td.clientWidth, title: td.getAttribute('title'), text: td.textContent, overflow: getComputedStyle(td).textOverflow };
+}"""
+
+
+HEAD_CUT_JS = r"""(sel) => [...document.querySelectorAll(sel + ' thead tr:first-child th')]
+  .filter((th) => { const l = th.querySelector('.th-label'); const r = th.getBoundingClientRect(); const m = th.querySelector('.req-mark');
+                    return (l && l.scrollWidth > l.clientWidth) || (m && m.getBoundingClientRect().right > r.right - 6); })
+  .map((th) => th.dataset.col + ':' + Math.round(th.getBoundingClientRect().width))"""
+
+
+def th_width(pg, col):
+    return round(pg.eval_on_selector(f'th[data-col="{col}"]', 'e => e.getBoundingClientRect().width'))
+
+
+def stored(pg, key):
+    raw = pg.evaluate(f"() => localStorage.getItem('{WIDTH_KEY}{key}')")
+    return None if raw is None else json.loads(raw)
+
+
+def drag_handle(pg, col, dx):
+    pg.evaluate("() => document.querySelectorAll('.table-wrap').forEach((w) => { w.scrollLeft = 0; })")
+    h = pg.locator(f'th[data-col="{col}"] [role=separator]')
+    h.scroll_into_view_if_needed()
+    box = h.bounding_box()
+    x, y = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+    pg.mouse.move(x, y)
+    pg.mouse.down()
+    pg.mouse.move(x + dx / 2, y, steps=4)
+    pg.mouse.move(x + dx, y, steps=4)
+    pg.mouse.up()
+    pg.wait_for_timeout(150)
+
+
+def dblclick_handle(pg, col):
+    box = pg.locator(f'th[data-col="{col}"] [role=separator]').bounding_box()
+    pg.mouse.dblclick(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+    pg.wait_for_timeout(150)
+
+
+def test_list_columns(browser, ids):
+    ctx, pg = new_page(browser)
+    login(pg, 'SMOKEA', 'admin')
+    api = pg.context.request  # shares the signed-in session cookie
+
+    def post(path, body):
+        r = api.post(path, data=body)
+        assert r.ok, (path, r.status, r.text())
+        return r.json()
+
+    post('/api/master/custom-fields', {'key': 'remarks', 'label': 'Remarks', 'dataType': 'text'})
+    long_model = post('/api/master/models', {'categoryId': ids['catLaptop'], 'manufacturer': 'Dell', 'name': LONG_MODEL})['modelId']
+    post('/api/assets', {'modelId': long_model, 'assetTag': 'SM-LONG-01', 'location': LONG_LOCATION, 'custom': {'remarks': LONG_REMARK}})
+    long_periph = post('/api/master/models', {'categoryId': ids['catMouse'], 'manufacturer': 'Logi', 'name': LONG_PERIPH})['modelId']
+    post('/api/peripherals/receive', {'modelId': long_periph, 'qty': 3})
+
+    T = '[data-testid=assets-table]'
+    pg.goto('/assets')
+    pg.wait_for_selector(T)
+    wait_list(pg)
+    r = pg.evaluate(ROWS_JS, T)
+    check('columns/assets: every row has the same height', max(r['heights']) - min(r['heights']) < 0.5, r['heights'])
+    check(f"columns/assets: row height = one text line ({r['one']}px ± 2)", all(abs(h - r['one']) <= 2 for h in r['heights']), (r['heights'], r['one']))
+    check('columns/assets: no body cell wraps (white-space: nowrap)', not r['wrapping'], r['wrapping'][:3])
+    check('columns/assets: header cells are one line, same height', max(r['heads']) - min(r['heads']) < 0.5 and max(r['heads']) < 2 * r['headLine'] + 18, (r['heads'], r['headLine']))
+    check('columns/assets: one <col> per column, table width = sum of widths', r['cols'] == r['ths'] and abs(r['tableW'] - r['colSum']) <= 1, r)
+    for col, full in [('model', LONG_MODEL), ('location', LONG_LOCATION), ('cf.remarks', LONG_REMARK)]:
+        c = pg.evaluate(CELL_JS, [T, 'SM-LONG-01', col])
+        check(f'columns/assets: long {col} is cut with an ellipsis and has the full value in title',
+              c is not None and c['scroll'] > c['client'] and c['overflow'] == 'ellipsis' and c['title'] == full and c['text'] == full, c)
+    tag = pg.evaluate(CELL_JS, [T, 'SM-LONG-01', 'asset_tag'])
+    st = pg.evaluate(CELL_JS, [T, 'SM-LONG-01', 'state'])
+    check('columns/assets: link and badge cells carry a text title', tag and tag['title'] == 'SM-LONG-01' and st and st['title'] == st['text'].strip() and st['title'], (tag, st))
+    spec = {'asset_tag': 130, 'category': 120, 'model': 200, 'state': 170, 'manufacturer': 120, 'serial': 150, 'holder': 140, 'employee_no': 110, 'department': 120,
+            'location': 160, 'purchase_date': 115, 'warranty_end': 115, 'due_date': 115, 'supplier': 150, 'purchase_price': 110, 'cf.remarks': 150}
+    D = {c: th_width(pg, c) for c in spec}
+    check('columns/assets: default widths = per-column default, widened only where the header needs it',
+          all(spec[c] <= D[c] <= 240 for c in spec) and D['model'] == 200 and D['location'] == 160 and D['cf.remarks'] == 150, D)
+    check('columns/assets: no header label is cut at the default widths', not pg.evaluate(HEAD_CUT_JS, T), pg.evaluate(HEAD_CUT_JS, T))
+    h = pg.locator('th[data-col=model] [role=separator]')
+    check('columns/assets: handle is a focusable vertical separator named after the column',
+          h.get_attribute('aria-orientation') == 'vertical' and h.get_attribute('tabindex') == '0' and '모델' in (h.get_attribute('aria-label') or ''), h.get_attribute('aria-label'))
+
+    # drag: width changes live, sort and URL unchanged, no text selected, survives reload
+    url0, sort0, tags0 = pg.url, pg.get_attribute('th[data-col=asset_tag]', 'aria-sort'), tags_shown(pg)
+    drag_handle(pg, 'model', 120)
+    w = th_width(pg, 'model')
+    check('columns/drag: model column 200 → 320', w == 320, w)
+    wait_list(pg)
+    check('columns/drag: sort, URL and row order unchanged', pg.url == url0 and pg.get_attribute('th[data-col=asset_tag]', 'aria-sort') == sort0 and tags_shown(pg) == tags0
+          and pg.locator('th[data-col=model]').get_attribute('aria-sort') is None, (pg.url, url0))
+    check('columns/drag: no text selected while dragging', pg.evaluate('() => String(getSelection())') == '')
+    check('columns/drag: stored in localStorage (only the changed column)', stored(pg, 'assets') == {'model': 320}, stored(pg, 'assets'))
+    check('columns/drag: widths are not in the URL', 'model' not in pg.url and 'width' not in pg.url.lower(), pg.url)
+    drag_handle(pg, 'model', -1000)
+    check('columns/drag: minimum 60px', th_width(pg, 'model') == 60, th_width(pg, 'model'))
+    drag_handle(pg, 'model', 2000)
+    check('columns/drag: maximum 800px', th_width(pg, 'model') == 800, th_width(pg, 'model'))
+    drag_handle(pg, 'model', -480)
+    pg.reload()
+    pg.wait_for_selector(T)
+    wait_list(pg)
+    check('columns/reload: dragged width survives (320)', th_width(pg, 'model') == 320 and th_width(pg, 'location') == 160, th_width(pg, 'model'))
+    dblclick_handle(pg, 'model')
+    check('columns/dblclick: handle resets the column to its default (200), sort unchanged', th_width(pg, 'model') == D['model'] and pg.url == url0 and stored(pg, 'assets') is None,
+          (th_width(pg, 'model'), stored(pg, 'assets')))
+
+    # keyboard: arrows ±16, Home resets; narrow header keeps its marks and cuts the label
+    hl = pg.locator('th[data-col=location] [role=separator]')
+    hl.focus()
+    pg.keyboard.press('ArrowRight')
+    pg.keyboard.press('ArrowRight')
+    check('columns/keys: → twice = +32', th_width(pg, 'location') == 192 and hl.get_attribute('aria-valuenow') == '192', th_width(pg, 'location'))
+    pg.keyboard.press('ArrowLeft')
+    check('columns/keys: ← = −16 (stored)', th_width(pg, 'location') == 176 and stored(pg, 'assets') == {'location': 176}, (th_width(pg, 'location'), stored(pg, 'assets')))
+    pg.keyboard.press('Home')
+    check('columns/keys: Home resets', th_width(pg, 'location') == 160 and stored(pg, 'assets') is None, th_width(pg, 'location'))
+    check('columns/keys: focus stayed on the handle, no sort', pg.evaluate("() => document.activeElement.getAttribute('role')") == 'separator' and pg.url == url0)
+    hr = pg.locator('th[data-col="cf.remarks"] [role=separator]')
+    hr.focus()
+    while th_width(pg, 'cf.remarks') > 102:
+        pg.keyboard.press('ArrowLeft')
+    nar = pg.eval_on_selector('th[data-col="cf.remarks"]', """th => { const r = th.getBoundingClientRect(); const m = th.querySelector('.req-mark').getBoundingClientRect();
+      const l = th.querySelector('.th-label'); return { w: Math.round(r.width), h: Math.round(r.height), markIn: m.left >= r.left && m.right <= r.right + 0.5,
+      cut: l.scrollWidth > l.clientWidth, ell: getComputedStyle(l).textOverflow }; }""")
+    check('columns/header: narrow column (102px) cuts the label with an ellipsis, REQ/OPT mark stays visible, still one line',
+          nar['w'] == 102 and nar['markIn'] and nar['cut'] and nar['ell'] == 'ellipsis' and abs(nar['h'] - r['heads'][0]) < 1, nar)
+
+    # reset control restores all defaults and clears storage; the toolbar reset does not touch widths
+    drag_handle(pg, 'model', 80)
+    pg.click('[data-testid=list-reset]')
+    wait_list(pg)
+    check('columns/toolbar reset keeps widths', th_width(pg, 'model') == 280 and th_width(pg, 'cf.remarks') == 102, (th_width(pg, 'model'), th_width(pg, 'cf.remarks')))
+    pg.click('[data-testid=reset-col-widths]')
+    pg.wait_for_timeout(150)
+    check('columns/reset control: all defaults, storage cleared', {c: th_width(pg, c) for c in spec} == D and stored(pg, 'assets') is None,
+          (th_width(pg, 'model'), stored(pg, 'assets')))
+    check('columns/reset control: label', pg.inner_text('[data-testid=reset-col-widths]').strip() == '열 너비 초기화')
+
+    # peripherals: single-line rows + one drag, own storage key
+    P = '[data-testid=stock-table]'
+    pg.goto('/peripherals')
+    pg.wait_for_selector(P)
+    wait_list(pg)
+    r = pg.evaluate(ROWS_JS, P)
+    check('columns/peripherals: every row has the same height, no cell wraps', max(r['heights']) - min(r['heights']) < 0.5 and not r['wrapping'], (r['heights'], r['wrapping'][:3]))
+    check('columns/peripherals: row is one line (action buttons at most)', max(r['heights']) < r['one'] + 12, (r['heights'], r['one']))
+    c = pg.evaluate(CELL_JS, [P, LONG_PERIPH[:20], 'model'])
+    check('columns/peripherals: long model cut with ellipsis, full value in title', c is not None and c['scroll'] > c['client'] and c['title'] == LONG_PERIPH, c)
+    btns = pg.eval_on_selector(P, "t => { const idx = [...t.tHead.rows[0].cells].findIndex((th) => th.dataset.col === 'actions'); const td = t.tBodies[0].rows[0].cells[idx]; return td.scrollWidth <= td.clientWidth; }")
+    check('columns/peripherals: default actions width fits its buttons', btns)
+    check('columns/peripherals: no header label is cut at the default widths', not pg.evaluate(HEAD_CUT_JS, P), pg.evaluate(HEAD_CUT_JS, P))
+    w0 = th_width(pg, 'model')
+    url0 = pg.url
+    drag_handle(pg, 'model', 90)
+    check('columns/peripherals: drag widens model by 90, sort unchanged', th_width(pg, 'model') == w0 + 90 and pg.url == url0, (w0, th_width(pg, 'model')))
+    pg.reload()
+    pg.wait_for_selector(P)
+    wait_list(pg)
+    check('columns/peripherals: width survives reload, separate key from assets', th_width(pg, 'model') == w0 + 90 and stored(pg, 'peripherals') == {'model': w0 + 90} and stored(pg, 'assets') is None,
+          (th_width(pg, 'model'), stored(pg, 'peripherals')))
+    # English (longer labels/buttons): headers and action buttons still fit at the defaults
+    pg.click('[data-testid=reset-col-widths]')
+    pg.evaluate("() => localStorage.setItem('stockmgmt.lang', 'en')")
+    for path, sel in [('/peripherals', P), ('/assets', T)]:
+        pg.goto(path)
+        pg.wait_for_selector(sel)
+        settle(pg, 'en')
+        check(f'columns/en {path}: no header label is cut at the default widths', not pg.evaluate(HEAD_CUT_JS, sel), pg.evaluate(HEAD_CUT_JS, sel))
+    pg.goto('/peripherals')
+    pg.wait_for_selector(P)
+    settle(pg, 'en')
+    btns = pg.eval_on_selector(P, "t => { const idx = [...t.tHead.rows[0].cells].findIndex((th) => th.dataset.col === 'actions'); const td = t.tBodies[0].rows[0].cells[idx]; return td.scrollWidth <= td.clientWidth; }")
+    check('columns/en peripherals: default actions width fits its buttons', btns)
+    pg.evaluate("() => localStorage.removeItem('stockmgmt.lang')")
+    ctx.close()
+
+    # stored values are validated; a hidden column (viewer: no supplier) leaves no gap and no error
+    ctx, pg = new_page(browser)
+    before = len(page_errors)
+    login(pg, 'SMOKEA', 'viewer')
+    pg.evaluate(f"""() => localStorage.setItem('{WIDTH_KEY}assets', JSON.stringify({{ model: 300, supplier: 250, location: 'wide', serial: 5000, bogus_col: 200, 'x y': 100 }}))""")
+    pg.goto('/assets')
+    pg.wait_for_selector(T)
+    wait_list(pg)
+    r = pg.evaluate(ROWS_JS, T)
+    check('columns/stored: valid entry applied, invalid ones ignored (model 300, location/serial at their defaults)',
+          th_width(pg, 'model') == 300 and th_width(pg, 'location') == D['location'] and th_width(pg, 'serial') == D['serial'], (th_width(pg, 'model'), th_width(pg, 'location'), th_width(pg, 'serial')))
+    check('columns/stored: hidden supplier column takes no space (table = sum of visible cols)', pg.locator('th[data-col=supplier]').count() == 0 and r['cols'] == r['ths'] and abs(r['tableW'] - r['colSum']) <= 1, r)
+    pg.click('[data-testid=reset-col-widths]')
+    check('columns/stored: reset clears the stored value', stored(pg, 'assets') is None)
+    check('columns/stored: no page errors', len(page_errors) == before, page_errors[before:])
+    ctx.close()
+
+    # storage blocked: resizing still works for the page session, no error
+    ctx, pg = new_page(browser, "Storage.prototype.setItem = function () { throw new DOMException('blocked', 'SecurityError'); }; Storage.prototype.getItem = function () { throw new DOMException('blocked', 'SecurityError'); }; Storage.prototype.removeItem = function () { throw new DOMException('blocked', 'SecurityError'); };")
+    before = len(page_errors)
+    login(pg, 'SMOKEA', 'admin')
+    pg.goto('/assets')
+    pg.wait_for_selector(T)
+    wait_list(pg)
+    drag_handle(pg, 'model', 50)
+    ok1 = th_width(pg, 'model') == 250
+    # in-app navigation (no reload): the width is kept in this tab's memory
+    pg.locator('nav a[href="/peripherals"]').first.click()
+    pg.wait_for_selector(P)
+    pg.locator('nav a[href="/assets"]').first.click()
+    pg.wait_for_selector(T)
+    wait_list(pg)
+    check('columns/storage blocked: drag works and is kept for the page session, no page error', ok1 and th_width(pg, 'model') == 250 and len(page_errors) == before,
+          (ok1, th_width(pg, 'model'), page_errors[before:]))
+    pg.click('[data-testid=reset-col-widths]')
+    check('columns/storage blocked: reset works', th_width(pg, 'model') == D['model'] and len(page_errors) == before)
+    ctx.close()
+
+
 def main():
     with sync_playwright() as p:
         ids = seed(p)
@@ -580,6 +824,7 @@ def main():
         sweep(browser, 'en', ids)
         sweep(browser, 'zh', ids)
         test_user_default_and_storage(browser)
+        test_list_columns(browser, ids)
         browser.close()
     check('no uncaught page errors / unexpected JS dialogs', not page_errors, page_errors[:5])
     print(f'\nRESULT: {len(passed)} passed, {len(failed)} failed')

@@ -5,7 +5,7 @@ import type { AssetState } from '@/lib/assets/transitions';
 import { RequireCompany, useShell } from '../../shell';
 import { api, Badge, Button, ErrorText, PageHeader, smallInput } from '../../ui';
 import { CreateAssetDialog } from './create-dialog';
-import { STATE_SUBSTATES, STATE_TONE, useAssetLabels, type Substate } from './labels';
+import { STATE_SUBSTATES, STATE_TONE, stateText, useAssetLabels, type Substate } from './labels';
 import { isOverdue, listOf, modelLabel, PersonPicker, StateBadge, useCustomDisplay, useList, type PersonRef } from './shared';
 import { SORT_KEYS, type AssetPage, type AssetRow, type CategoryOption, type DepartmentOption, type ModelOption, type SortKey } from './types';
 import { apiQuery, FILTER_PARAM, ListPager, ListTable, parsePageSize, SearchToolbar, useListUrl, type Column, type FieldOption } from '../list-tools';
@@ -117,20 +117,21 @@ function AssetsInner() {
 
   // 열: 이름 · 필수(엑셀 업로드의 필수 열과 같다) · 정렬 기준 · 열 필터 이름.
   const columns: Column<AssetRow>[] = [
-    { id: 'asset_tag', label: T.colTag, required: true, sort: 'asset_tag', filter: 'asset_tag', sticky: true, nowrap: true, cell: (a) => <Link href={`/assets/${a.id}`}>{a.asset_tag}</Link> },
-    { id: 'category', label: T.colCategory, required: true, sort: 'category', filter: 'category', cell: (a) => a.category_name },
-    { id: 'model', label: T.colModel, required: true, sort: 'model', filter: 'model', cell: (a) => a.model_name },
-    { id: 'state', label: T.colState, required: true, sort: 'state', filterNode: stateSelect, nowrap: true, cell: (a) => <StateBadge state={a.state} substate={a.substate} /> },
-    { id: 'manufacturer', label: T.colManufacturer, required: true, sort: 'manufacturer', filter: 'manufacturer', cell: (a) => a.manufacturer },
-    { id: 'serial', label: T.colSerial, required: false, sort: 'serial', filter: 'serial', cell: (a) => a.serial_number ?? '' },
-    { id: 'holder', label: T.colHolder, required: false, sort: 'holder', filter: 'holder', cell: (a) => a.holder_name ?? '' },
-    { id: 'employee_no', label: T.colEmployeeNo, required: false, sort: 'employee_no', filter: 'employee_no', nowrap: true, cell: (a) => a.holder_employee_no ?? '' },
-    { id: 'department', label: T.colDept, required: false, sort: 'department', filter: 'department', cell: (a) => a.department_name },
-    { id: 'location', label: T.colLocation, required: false, sort: 'location', filter: 'location', cell: (a) => a.location ?? '' },
-    { id: 'purchase_date', label: T.colPurchaseDate, required: false, sort: 'purchase_date', filter: 'purchase_date', nowrap: true, cell: (a) => a.purchase_date ?? '' },
-    { id: 'warranty_end', label: T.colWarrantyEnd, required: false, sort: 'warranty_end', filter: 'warranty_end', nowrap: true, cell: (a) => a.warranty_end ?? '' },
+    { id: 'asset_tag', label: T.colTag, required: true, sort: 'asset_tag', filter: 'asset_tag', sticky: true, width: 130, title: (a) => a.asset_tag, cell: (a) => <Link href={`/assets/${a.id}`}>{a.asset_tag}</Link> },
+    { id: 'category', label: T.colCategory, required: true, sort: 'category', filter: 'category', width: 120, cell: (a) => a.category_name },
+    { id: 'model', label: T.colModel, required: true, sort: 'model', filter: 'model', width: 200, cell: (a) => a.model_name },
+    { id: 'state', label: T.colState, required: true, sort: 'state', filterNode: stateSelect, width: 170, title: (a) => stateText(L, a.state, a.substate), cell: (a) => <StateBadge state={a.state} substate={a.substate} /> },
+    { id: 'manufacturer', label: T.colManufacturer, required: true, sort: 'manufacturer', filter: 'manufacturer', width: 120, cell: (a) => a.manufacturer },
+    { id: 'serial', label: T.colSerial, required: false, sort: 'serial', filter: 'serial', width: 150, cell: (a) => a.serial_number ?? '' },
+    { id: 'holder', label: T.colHolder, required: false, sort: 'holder', filter: 'holder', width: 140, cell: (a) => a.holder_name ?? '' },
+    { id: 'employee_no', label: T.colEmployeeNo, required: false, sort: 'employee_no', filter: 'employee_no', width: 110, cell: (a) => a.holder_employee_no ?? '' },
+    { id: 'department', label: T.colDept, required: false, sort: 'department', filter: 'department', width: 120, cell: (a) => a.department_name },
+    { id: 'location', label: T.colLocation, required: false, sort: 'location', filter: 'location', width: 160, cell: (a) => a.location ?? '' },
+    { id: 'purchase_date', label: T.colPurchaseDate, required: false, sort: 'purchase_date', filter: 'purchase_date', width: 115, cell: (a) => a.purchase_date ?? '' },
+    { id: 'warranty_end', label: T.colWarrantyEnd, required: false, sort: 'warranty_end', filter: 'warranty_end', width: 115, cell: (a) => a.warranty_end ?? '' },
     {
-      id: 'due_date', label: T.colDue, required: false, sort: 'due_date', nowrap: true,
+      id: 'due_date', label: T.colDue, required: false, sort: 'due_date', width: 115,
+      title: (a) => (a.due_date ? (a.state === 'IN_USE' && isOverdue(a.due_date) ? `${a.due_date} ${T.overdue}` : a.due_date) : ''),
       cell: (a) => (
         <>
           {a.due_date ?? ''}
@@ -139,13 +140,13 @@ function AssetsInner() {
       ),
     },
   ];
-  if (fields?.supplier) columns.push({ id: 'supplier', label: T.colSupplier, required: false, sort: 'supplier', filter: 'supplier', cell: (a) => a.supplier ?? '' });
+  if (fields?.supplier) columns.push({ id: 'supplier', label: T.colSupplier, required: false, sort: 'supplier', filter: 'supplier', width: 150, cell: (a) => a.supplier ?? '' });
   if (fields?.purchasePrice) {
-    columns.push({ id: 'purchase_price', label: T.colPrice, required: false, sort: 'purchase_price', filter: 'purchase_price', align: 'right', nowrap: true, cell: (a) => F.optNum(a.purchase_price) });
+    columns.push({ id: 'purchase_price', label: T.colPrice, required: false, sort: 'purchase_price', filter: 'purchase_price', align: 'right', width: 110, cell: (a) => F.optNum(a.purchase_price) });
   }
   for (const c of fields?.custom ?? []) {
     columns.push({
-      id: `cf.${c.key}`, label: c.label, required: false, filter: `cf.${c.key}`,
+      id: `cf.${c.key}`, label: c.label, required: false, filter: `cf.${c.key}`, width: 150,
       cell: (a) => (a.custom[c.key] === undefined || a.custom[c.key] === null ? '' : showCustom(a.custom[c.key])),
     });
   }
@@ -262,6 +263,7 @@ function AssetsInner() {
         <>
           <ListTable
             testId="assets-table"
+            listKey="assets"
             caption={T.total(data.total)}
             columns={columns}
             rows={items}
@@ -272,8 +274,8 @@ function AssetsInner() {
             filterValue={(name) => get(`${FILTER_PARAM}${name}`)}
             onFilter={(name, v) => setParams({ [`${FILTER_PARAM}${name}`]: v || null })}
             empty={T.empty}
+            footer={<ListPager page={data.page} total={data.total} pageSize={data.pageSize} onPage={(p) => setParams({ page: String(p) }, true)} />}
           />
-          <ListPager page={data.page} total={data.total} pageSize={data.pageSize} onPage={(p) => setParams({ page: String(p) }, true)} />
         </>
       ) : null}
 

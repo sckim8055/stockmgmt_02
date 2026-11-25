@@ -33,7 +33,7 @@
 
 ## 작업 방법
 
-- Node 24, PostgreSQL 16. 실행 방법은 `README.md`.
+- Node 26(24 도 동작), PostgreSQL 16. 실행 방법은 `README.md`.
 - 끝내기 전에 `npm run check` (타입 검사 + 전체 테스트) 가 통과해야 한다. 새 API를 만들면 `tests/` 에
   "다른 기업 계정으로 호출하면 안 보인다", "권한 없는 계정은 403" 테스트를 함께 추가한다.
 - 설계 배경은 `docs/ARCHITECTURE.md`.

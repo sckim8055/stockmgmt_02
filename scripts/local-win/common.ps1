@@ -6,6 +6,11 @@ $RepoDir  = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $WorksDir = Split-Path $RepoDir -Parent
 $ToolsDir = Join-Path $WorksDir 'tools'
 $NodeDir  = Join-Path $ToolsDir 'node26'
+# If an unpacked official Node 26 zip already sits next to the repository (node-v26.x.y-win-x64), use it instead.
+$sharedNode = Get-ChildItem -Path $WorksDir -Directory -Filter 'node-v26.*-win-x64' -ErrorAction SilentlyContinue |
+  Where-Object { Test-Path (Join-Path $_.FullName 'node.exe') } |
+  Sort-Object { [version]($_.Name -replace '^node-v|-win-x64$', '') } -Descending | Select-Object -First 1
+if ($sharedNode) { $NodeDir = $sharedNode.FullName }
 $PgDir    = Join-Path $ToolsDir 'pgsql16'
 $DataRoot = Join-Path $WorksDir 'stockmgmt_data'
 $PgData   = Join-Path $DataRoot 'pg16'

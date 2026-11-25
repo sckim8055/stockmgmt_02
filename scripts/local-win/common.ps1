@@ -72,3 +72,9 @@ function Stop-Pg {
 
 function Get-OwnerUrl { "postgres://postgres:$(Read-Secret 'db-owner')@127.0.0.1:$PgPort/$DbName" }
 function Get-AppUrl   { "postgres://stock_app:$(Read-Secret 'db-app')@127.0.0.1:$PgPort/$DbName" }
+
+# The production build needs junction points, which only NTFS has. On exFAT/FAT32 the app runs in development mode.
+function Test-RepoOnNtfs {
+  $root = [System.IO.Path]::GetPathRoot($RepoDir)
+  return ((New-Object System.IO.DriveInfo $root).DriveFormat -eq 'NTFS')
+}

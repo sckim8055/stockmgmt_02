@@ -112,8 +112,15 @@ try {
     'TRUSTED_IP_HEADER=',
     'HASH_CONCURRENCY=4', '') -join "`n")
 
-  Say 'Building the app'
-  Run (Join-Path $NodeDir 'npm.cmd') @('run', 'build')
+  if (Test-RepoOnNtfs) {
+    Say 'Building the app'
+    Run (Join-Path $NodeDir 'npm.cmd') @('run', 'build')
+  } else {
+    Say 'Build skipped: this drive is not NTFS'
+    Write-Host 'The production build cannot be made on exFAT/FAT32 (no junction points).' -ForegroundColor Yellow
+    Write-Host 'start.cmd will run the app in development mode (slower, for trying it out only).' -ForegroundColor Yellow
+    Write-Host 'PostgreSQL is also only supported on NTFS. Move this folder to an NTFS drive for real use.' -ForegroundColor Yellow
+  }
 } finally {
   $env:PGPASSWORD = $null
   Stop-Pg

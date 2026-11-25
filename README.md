@@ -52,6 +52,7 @@ npm run dev        # http://localhost:3000/login  → 기업코드: OPERATOR
 
 - DB 파일·로그·자동 생성된 DB 비밀번호는 `..\stockmgmt_data\` 에 있다. 이 폴더를 지우면 데이터가 사라진다.
 - DB 는 5433, 앱은 3000 포트를 쓰고 둘 다 이 PC(127.0.0.1)에서만 접속된다.
+- 저장소가 NTFS 가 아닌 드라이브(exFAT 등)에 있으면 운영용 빌드를 만들 수 없어 개발 모드로 실행된다(시험용). PostgreSQL 도 NTFS 만 지원하므로 실제로 쓸 때는 NTFS 드라이브로 옮긴다.
 - `.cmd` 는 그 실행 한 번에 한해 PowerShell 실행 정책을 우회한다(`-ExecutionPolicy Bypass`). 시스템 설정은 바꾸지 않는다.
 
 ## 검사

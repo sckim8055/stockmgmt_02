@@ -3,13 +3,13 @@ import Link from 'next/link';
 import { useId, useState, type ChangeEvent } from 'react';
 import { useShell } from '../../shell';
 import { apiDownload, apiUpload, Button, ConfirmDialog, ErrorText } from '../../ui';
-import { isImportResult, KIND_INFO, MAX_FILE_BYTES, useKindText, type ImportKind, type ImportResult } from './labels';
-import { CheckResult, CreatedList } from './result';
+import { isImportResult, KIND_INFO, MAX_FILE_BYTES, useKindText, type ImportResult, type UploadKind } from './labels';
+import { CheckResult, CreatedList, SheetSummary } from './result';
 import { useT } from '../../i18n';
 import { TEXT } from './import-card.text';
 
-/** 한 종류(직원·자산·주변기기)의 양식 내려받기 → 파일 고르기 → 검사 → 반영. */
-export function ImportCard({ kind }: { kind: ImportKind }) {
+/** 한 종류(직원·자산·주변기기) 또는 통합 파일의 양식 내려받기 → 파일 고르기 → 검사 → 반영. */
+export function ImportCard({ kind }: { kind: UploadKind }) {
   const T = useT(TEXT);
   const info = KIND_INFO[kind];
   const text = useKindText()[kind];
@@ -102,6 +102,7 @@ export function ImportCard({ kind }: { kind: ImportKind }) {
         <div role="status" style={{ marginTop: 10, background: 'var(--success-bg)', color: 'var(--success-text)', borderRadius: 6, padding: '10px 12px', fontSize: 14 }}>
           {T.done(done.totalRows)}
           {can(...info.list.permission) ? <> <Link href={info.list.href}>{text.listLabel}</Link></> : null}
+          {done.sheets ? <SheetSummary sheets={done.sheets} /> : null}
           <CreatedList created={done.created} done />
         </div>
       ) : null}

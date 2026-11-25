@@ -6,6 +6,7 @@
 // 이 파일이 지키는 것(모두 tests/review3.test.ts 로 확인한다)
 //  - 파일이 스스로 적어 둔 크기·항목 수를 믿지 않는다. zip 목록을 직접 읽어 검사하고, 필요한 항목 넷(통합 문서, 관계,
 //    공유 문자열, 첫 시트)만 푼다. 압축은 흘려 풀면서 실제로 나온 바이트를 세고, 한도를 넘는 순간 멈춘다.
+//    이름으로 여러 시트를 읽을 때(readXlsxSheets)는 찾는 이름의 시트만 풀고, 시트 합계 한도(XLSX_MULTI_LIMITS)를 함께 건다.
 //  - zip64, 암호화, 같은 이름이 둘 이상인 항목, 목록 항목이 지나치게 많은 파일은 거부한다.
 //  - XML 은 앞에서 뒤로 한 번만 훑는다(정규식으로 닫는 태그를 찾지 않는다). 걸리는 시간이 입력 크기에 비례한다.
 //  - DOCTYPE 이 있으면 거부한다. 엔티티는 표준 5종과 숫자 참조만 푼다(XXE·엔티티 폭탄이 통하지 않는다).
@@ -29,6 +30,23 @@ export const XLSX_LIMITS = {
   columns: 40,
   cellChars: 1000,
   sharedStrings: 200_000,
+} as const;
+
+/**
+ * 이름으로 여러 시트를 읽을 때(readXlsxSheets)의 한도. 시트 하나에는 위의 한도가 그대로 걸리고,
+ * 여기의 합계 한도가 파일 전체의 일을 묶는다. 시트를 늘려도 일이 시트 수만큼 불어나지 않게 한다.
+ *  - 한 번에 찾을 수 있는 시트 이름은 최대 3개이고, 찾는 이름이 아닌 시트(안내 시트 등)는 풀지 않는다.
+ *  - 시트 내용(풀어낸 바이트)의 합계 24MB: 한 시트 한도(16MB)의 1.5배. 공유 문자열(16MB)은 시트가 몇이든 한 번만 푼다.
+ *    그래서 파일 하나에서 푸는 양의 상한은 1 + 1 + 16 + 24 = 42MB 이다(첫 시트만 읽을 때는 34MB).
+ *  - 빈 행까지 센 행 요소의 합계 30,000(한 시트 20,000의 1.5배).
+ *  - 값이 있는 행 2,000행은 시트마다 따로 센다(각 시트가 각자의 양식이므로).
+ */
+export const XLSX_MULTI_LIMITS = {
+  names: 3,
+  sheetBytesTotal: 24 * 1024 * 1024,
+  rowElementsTotal: 30_000,
+  /** workbook.xml 의 <sheet> 수. 엑셀 파일은 보통 수 개다. */
+  sheetEntries: 1000,
 } as const;
 
 const decoder = new TextDecoder('utf-8');
@@ -80,7 +98,7 @@ function readDirectory(bytes: Uint8Array): { entries: Map<string, ZipEntry>; dir
 }
 
 /** 항목 하나를 푼다. 실제로 나온 크기가 limit 를 넘으면 그 자리에서 멈춘다. */
-function extract(bytes: Uint8Array, dir: { entries: Map<string, ZipEntry>; directoryOffset: number }, name: string, limit: number): string | null {
+function extract(bytes: Uint8Array, dir: { entries: Map<string, ZipEntry>; directoryOffset: number }, name: string, limit: number, tooBigMessage = '파일 내용이 너무 큽니다.', size?: { bytes: number }): string | null {
   // 파일 안의 이름은 대소문자를 구분하지 않는다(엑셀도 그렇게 연다). 목록의 열쇠는 소문자로 맞춰 두었다.
   const entry = dir.entries.get(name.toLowerCase());
   if (!entry) return null;
@@ -90,9 +108,10 @@ function extract(bytes: Uint8Array, dir: { entries: Map<string, ZipEntry>; direc
   const end = start + entry.compressedSize;
   if (end > dir.directoryOffset) throw new XlsxError(NOT_XLSX);
   const data = bytes.subarray(start, end);
-  const tooBig = () => new XlsxError('파일 내용이 너무 큽니다.');
+  const tooBig = () => new XlsxError(tooBigMessage);
   if (entry.method === 0) {
     if (data.length > limit) throw tooBig();
+    if (size) size.bytes = data.length;
     return decoder.decode(data);
   }
   if (entry.method !== 8) throw new XlsxError(NOT_XLSX); // 암호화 또는 지원하지 않는 압축
@@ -113,6 +132,7 @@ function extract(bytes: Uint8Array, dir: { entries: Map<string, ZipEntry>; direc
     if (err instanceof XlsxError) throw err;
     throw new XlsxError(NOT_XLSX);
   }
+  if (size) size.bytes = total;
   const out = new Uint8Array(total);
   let o = 0;
   for (const c of chunks) {
@@ -287,7 +307,8 @@ function readSharedStrings(xml: string): string[] {
   return out;
 }
 
-function readSheet(xml: string, shared: string[]): Cell[][] {
+/** maxRowElements: 이 시트에서 셀 수 있는 행 요소(빈 행 포함)의 상한. 쓴 개수는 used 에 더한다. */
+function readSheet(xml: string, shared: string[], maxRowElements: number = XLSX_LIMITS.rowElements, used?: { rowElements: number }): Cell[][] {
   const rows: Cell[][] = [];
   let rowCount = 0;
   let rowElements = 0;
@@ -352,7 +373,7 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
   scanXml(xml, {
     open(name, attrs, selfClosing) {
       if (name === 'row') {
-        if (++rowElements > XLSX_LIMITS.rowElements) throw new XlsxError('행이 너무 많습니다. 자료가 없는 아래쪽 행을 지운 뒤 다시 저장해 주세요.');
+        if (++rowElements > maxRowElements) throw new XlsxError('행이 너무 많습니다. 자료가 없는 아래쪽 행을 지운 뒤 다시 저장해 주세요.');
         const r = Number(parseAttrs(attrs).get('r'));
         rowIndex = Number.isInteger(r) && r >= 1 ? r - 1 : nextRow;
         if (rowIndex < nextRow) throw new XlsxError(`${rowIndex + 1}행: 행 번호가 겹치거나 순서가 맞지 않습니다.`);
@@ -394,6 +415,7 @@ function readSheet(xml: string, shared: string[]): Cell[][] {
   });
   // 행이나 칸이 닫히지 않은 채 끝났으면 파일이 잘린 것이다.
   if (cells !== null || col >= 0) throw new XlsxError(NOT_XLSX);
+  if (used) used.rowElements += rowElements;
   return rows;
 }
 
@@ -431,11 +453,15 @@ function firstSheetPath(workbook: string | null, rels: string | null): string {
   return path;
 }
 
-/** 첫 시트를 행·열 배열로 읽는다. 빈 행은 건너뛰지 않고 그대로 둔다(행 번호를 엑셀과 맞추기 위해). */
-export function readXlsx(bytes: Uint8Array): Cell[][] {
+function openZip(bytes: Uint8Array): { entries: Map<string, ZipEntry>; directoryOffset: number } {
   if (bytes.length > XLSX_LIMITS.fileBytes) throw new XlsxError('파일이 너무 큽니다. (최대 5MB)');
   if (bytes.length < 22 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new XlsxError('엑셀(.xlsx) 파일이 아닙니다.');
-  const dir = readDirectory(bytes);
+  return readDirectory(bytes);
+}
+
+/** 첫 시트를 행·열 배열로 읽는다. 빈 행은 건너뛰지 않고 그대로 둔다(행 번호를 엑셀과 맞추기 위해). */
+export function readXlsx(bytes: Uint8Array): Cell[][] {
+  const dir = openZip(bytes);
   const sheetPath = firstSheetPath(
     extract(bytes, dir, 'xl/workbook.xml', XLSX_LIMITS.smallPartBytes),
     extract(bytes, dir, 'xl/_rels/workbook.xml.rels', XLSX_LIMITS.smallPartBytes),
@@ -444,6 +470,119 @@ export function readXlsx(bytes: Uint8Array): Cell[][] {
   if (sheet === null) throw new XlsxError('시트를 찾을 수 없습니다. 엑셀(.xlsx) 파일이 맞는지 확인하세요.');
   const sharedXml = extract(bytes, dir, 'xl/sharedStrings.xml', XLSX_LIMITS.partBytes);
   return readSheet(sheet, sharedXml === null ? [] : readSharedStrings(sharedXml));
+}
+
+/** 시트 이름 비교용: 앞뒤 공백을 떼고 유니코드 정규형(NFC)을 맞춘다(같은 한글이 조합형으로 저장된 경우). */
+const sheetNameKey = (name: string) => name.trim().normalize('NFC');
+
+/**
+ * 관계 파일의 Target 을 zip 안의 시트 경로로 바꾼다. xl/worksheets/ 바로 아래의 .xml 만 받는다.
+ * 경로 이동(.., .), 역슬래시, 빈 구간, 퍼센트 인코딩은 거부한다(zip 안에서 이름으로 찾을 뿐 파일 시스템에 닿지는 않지만,
+ * 다른 부분(공유 문자열·통합 문서)을 시트로 읽게 만들 수 없도록 엄격하게 본다).
+ */
+function sheetPathOf(target: string): string {
+  if (/[\\%\u0000-\u001f]/.test(target)) throw new XlsxError(NOT_XLSX);
+  const path = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+  if (path.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')) throw new XlsxError(NOT_XLSX);
+  if (!/^xl\/worksheets\/[^/]+\.xml$/i.test(path)) throw new XlsxError(NOT_XLSX);
+  return path;
+}
+
+/**
+ * 이름이 names 중 하나인 시트들을 읽는다(앞뒤 공백을 뗀 이름이 정확히 같아야 한다). 없는 시트는 결과에 넣지 않는다.
+ * 찾는 이름이 아닌 시트는 풀지 않는다. 한도는 XLSX_LIMITS(시트마다)와 XLSX_MULTI_LIMITS(파일 전체 합계)를 함께 건다.
+ *
+ * 거부하는 것: 같은 이름(공백을 뗀 뒤)의 시트가 둘 이상, 두 이름이 같은 시트 파일을 가리킴, 관계(r:id)가 없거나 겹침,
+ * xl/worksheets/ 밖을 가리키는 경로. 오류 메시지에는 파일 안의 글자(시트 이름 등)를 싣지 않고, 찾는 이름만 쓴다.
+ */
+export function readXlsxSheets(bytes: Uint8Array, names: readonly string[]): Map<string, Cell[][]> {
+  if (names.length === 0 || names.length > XLSX_MULTI_LIMITS.names) throw new Error('readXlsxSheets: 시트 이름 수가 올바르지 않습니다.');
+  const wanted = new Map(names.map((n) => [sheetNameKey(n), n]));
+  if (wanted.size !== names.length) throw new Error('readXlsxSheets: 같은 시트 이름을 두 번 찾을 수 없습니다.');
+  const dir = openZip(bytes);
+  const workbook = extract(bytes, dir, 'xl/workbook.xml', XLSX_LIMITS.smallPartBytes);
+  if (workbook === null) throw new XlsxError('통합 문서 정보(시트 목록)가 없습니다. 엑셀(.xlsx)에서 다시 저장해 주세요.');
+
+  // 1) 통합 문서의 시트 목록에서 찾는 이름의 관계 ID 를 모은다.
+  const ridOf = new Map<string, string>(); // 찾는 이름 → r:id
+  let sheetEntries = 0;
+  scanXml(workbook, {
+    open(name, attrs) {
+      if (name !== 'sheet') return;
+      if (++sheetEntries > XLSX_MULTI_LIMITS.sheetEntries) throw new XlsxError('시트가 너무 많습니다.');
+      const a = parseAttrs(attrs);
+      const raw = a.get('name') ?? '';
+      // 엑셀의 시트 이름은 31자까지다. 아주 긴 이름은 찾는 이름일 수 없으므로 비교하지 않고 넘긴다.
+      if (raw.length > 200) return;
+      const target = wanted.get(sheetNameKey(raw));
+      if (target === undefined) return;
+      if (ridOf.has(target)) throw new XlsxError(`같은 이름의 시트가 둘 이상 있습니다: ${target}. 시트 이름을 하나만 남겨 주세요.`);
+      ridOf.set(target, a.get('r:id') ?? a.get('id') ?? '');
+    },
+    close() {},
+    text() {},
+  });
+  const out = new Map<string, Cell[][]>();
+  if (ridOf.size === 0) return out;
+
+  // 2) 관계 파일에서 그 ID 들의 경로를 찾는다. 찾는 ID 가 두 번 나오면 어느 것이 맞는지 알 수 없으므로 거부한다.
+  const rels = extract(bytes, dir, 'xl/_rels/workbook.xml.rels', XLSX_LIMITS.smallPartBytes);
+  const neededIds = new Set([...ridOf.values()].filter((id) => id !== ''));
+  const targetOf = new Map<string, string>();
+  if (rels) {
+    scanXml(rels, {
+      open(name, attrs) {
+        if (name !== 'Relationship') return;
+        const a = parseAttrs(attrs);
+        const id = a.get('Id');
+        if (id === undefined || !neededIds.has(id)) return;
+        if (targetOf.has(id)) throw new XlsxError(NOT_XLSX);
+        targetOf.set(id, a.get('Target') ?? '');
+      },
+      close() {},
+      text() {},
+    });
+  }
+  const pathOf = new Map<string, string>(); // 찾는 이름 → 시트 경로
+  const usedPaths = new Set<string>();
+  for (const name of names) {
+    const rid = ridOf.get(name);
+    if (rid === undefined) continue;
+    const target = rid ? targetOf.get(rid) : undefined;
+    if (!target) throw new XlsxError(`${name} 시트를 찾을 수 없습니다. 엑셀(.xlsx)에서 다시 저장해 주세요.`);
+    const path = sheetPathOf(target);
+    // zip 의 이름은 대소문자를 구분하지 않고 찾는다(extract 와 같게).
+    if (usedPaths.has(path.toLowerCase())) throw new XlsxError(`${name} 시트가 다른 시트와 같은 내용을 가리킵니다. 엑셀(.xlsx)에서 다시 저장해 주세요.`);
+    usedPaths.add(path.toLowerCase());
+    pathOf.set(name, path);
+  }
+
+  // 3) 시트를 푼다. 합계 한도를 먼저 확인하고(풀어낸 바이트 기준), 공유 문자열은 한 번만 푼다.
+  const totalMessage = `파일 내용이 너무 큽니다. (시트를 모두 합쳐 최대 ${XLSX_MULTI_LIMITS.sheetBytesTotal / 1024 / 1024}MB)`;
+  let bytesLeft: number = XLSX_MULTI_LIMITS.sheetBytesTotal;
+  const xmlOf = new Map<string, string>();
+  for (const [name, path] of pathOf) {
+    const limit = Math.min(XLSX_LIMITS.partBytes, bytesLeft);
+    const size = { bytes: 0 };
+    const xml = extract(bytes, dir, path, limit, limit < XLSX_LIMITS.partBytes ? totalMessage : `${name} 시트: 파일 내용이 너무 큽니다.`, size);
+    if (xml === null) throw new XlsxError(`${name} 시트를 찾을 수 없습니다. 엑셀(.xlsx)에서 다시 저장해 주세요.`);
+    // 실제로 풀어낸 바이트 수를 뺀다. extract 가 이미 limit 를 넘지 않게 했다.
+    bytesLeft -= size.bytes;
+    xmlOf.set(name, xml);
+  }
+  const sharedXml = extract(bytes, dir, 'xl/sharedStrings.xml', XLSX_LIMITS.partBytes);
+  const shared = sharedXml === null ? [] : readSharedStrings(sharedXml);
+  const used = { rowElements: 0 };
+  for (const [name, xml] of xmlOf) {
+    const maxRowElements = Math.min(XLSX_LIMITS.rowElements, XLSX_MULTI_LIMITS.rowElementsTotal - used.rowElements);
+    try {
+      out.set(name, readSheet(xml, shared, maxRowElements, used));
+    } catch (err) {
+      if (err instanceof XlsxError) throw new XlsxError(`${name} 시트: ${err.message}`);
+      throw err;
+    }
+  }
+  return out;
 }
 
 /**

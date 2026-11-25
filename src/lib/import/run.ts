@@ -74,6 +74,8 @@ export const IMPORT_COLUMNS: Record<ImportKind, Column[]> = {
 
 /** 업로드에 필요한 권한(라우트 선언과 같아야 한다). 주변기기 업로드는 입고와 같은 일이므로 입고 권한을 쓴다. */
 export const IMPORT_RESOURCE: Record<ImportKind, string> = { persons: 'master.person', assets: 'asset.item', peripherals: 'peripheral.receive' };
+/** IMPORT_RESOURCE 와 짝인 동작. 종류별 업로드 라우트(src/app/api/import/<kind>/route.ts)의 선언과 같다. */
+export const IMPORT_OPERATION: Record<ImportKind, 'import' | 'execute'> = { persons: 'import', assets: 'import', peripherals: 'execute' };
 
 /** 업로드 권한에 더해 필요한 등록(create) 권한. 주변기기는 입고 권한이 곧 등록 권한이다. */
 const IMPORT_CREATE_RESOURCE: Record<ImportKind, string | null> = { persons: 'master.person', assets: 'asset.item', peripherals: null };
@@ -100,6 +102,8 @@ const STATUS_PLANS: Record<string, StatusPlan> = {
   매각: { holder: 'forbidden', steps: [{ action: 'RETIRE' }, { action: 'DISPOSE', disposal: 'SOLD' }] },
   기증: { holder: 'forbidden', steps: [{ action: 'RETIRE' }, { action: 'DISPOSE', disposal: 'DONATED' }] },
 };
+/** 자산 상태 열에 쓸 수 있는 값(양식 안내에 싣는다). */
+export const ASSET_STATUS_VALUES: readonly string[] = Object.keys(STATUS_PLANS);
 const STATUS_ALIASES: Record<string, string> = {
   in_stock: '재고', instock: '재고', in_use: '사용중', inuse: '사용중', defective: '불량', maintenance: '수리중',
   missing: '분실', retired: '퇴역', disposed: '폐기', sold: '매각', donated: '기증',
@@ -137,6 +141,8 @@ function customColumns(defs: CustomColumnDef[]): (Column & { alt: string })[] {
 }
 
 export interface RowError {
+  /** 통합 파일 업로드에서 오류가 난 시트 이름. 종류별 업로드와 파일 전체에 관한 오류에는 없다. */
+  sheet?: string;
   /** 엑셀의 행 번호(머리글이 1행) */
   row: number;
   message: string;
@@ -152,11 +158,12 @@ export interface ImportResult {
 }
 
 type Values = Record<string, string | number | boolean | null>;
+type ParsedRow = { row: number; values: Values };
 
 const headerKey = (v: Cell) => String(v ?? '').replace(/[\s*]/g, '').toLowerCase();
 
 /** 머리글을 읽어 열 위치를 정하고, 자료 행을 값 객체로 바꾼다. 형식 오류는 행 오류로 모은다. */
-function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[], customDefs: CustomColumnDef[] = []): { row: number; values: Values }[] {
+function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[], customDefs: CustomColumnDef[] = []): ParsedRow[] {
   // 기본 열이 먼저다. 사용자 지정 필드의 이름이 기본 열과 같으면 기본 열로 읽는다.
   const extra = customColumns(customDefs);
   const columns: Column[] = [...IMPORT_COLUMNS[kind], ...extra];
@@ -173,7 +180,7 @@ function parseRows(kind: ImportKind, sheet: Cell[][], errors: RowError[], custom
   for (const col of columns) if (col.required && !position.has(col.key)) errors.push({ row: 1, message: `필수 열이 없습니다: ${col.header}` });
   if (errors.length) return [];
 
-  const out: { row: number; values: Values }[] = [];
+  const out: ParsedRow[] = [];
   sheet.slice(1).forEach((cells, i) => {
     const row = i + 2;
     if (!cells || cells.every((c) => c === null || c === undefined)) return; // 빈 행
@@ -359,33 +366,84 @@ class RollbackImport extends Error {}
 
 const MAX_REPORTED_ERRORS = 200;
 
-/**
- * 업로드를 실행한다. commit 이 false(미리보기)이거나 오류가 있으면 아무것도 남기지 않는다.
- * tenant 는 라우트 핸들러가 받은 것을 그대로 넘긴다.
- */
-export async function runImport(
-  tenant: <T>(fn: (db: Db) => Promise<T>) => Promise<T>,
-  actor: Actor,
-  kind: ImportKind,
-  sheet: Cell[][],
-  options: { commit: boolean },
-): Promise<ImportResult> {
-  const errors: RowError[] = [];
-  // 자산은 그 기업의 사용자 지정 필드를 열로 받는다. 머리글을 읽으려면 정의가 먼저 필요하다.
-  const customDefs: CustomColumnDef[] = kind === 'assets'
-    ? (await tenant((db) => listCustomFields(db, actor))).filter((d) => d.is_active).map((d) => ({ key: d.key, label: d.label, data_type: d.data_type }))
-    : [];
-  const rows = parseRows(kind, sheet, errors, customDefs);
-  const result: ImportResult = { kind, committed: false, totalRows: rows.length, errors, created: { departments: [], categories: [], models: [] } };
-  if (errors.length) {
-    result.errors = errors.slice(0, MAX_REPORTED_ERRORS);
-    return result;
-  }
-  if (rows.length === 0) {
-    errors.push({ row: 2, message: '올릴 자료가 없습니다.' });
-    return result;
-  }
+type Tenant = <T>(fn: (db: Db) => Promise<T>) => Promise<T>;
 
+/** 한 트랜잭션에서 처리할 시트 하나. sheet 는 통합 파일 업로드일 때만 있다(오류와 권한 메시지에 시트 이름을 붙인다). */
+interface ImportJob {
+  kind: ImportKind;
+  sheet?: string;
+  rows: ParsedRow[];
+}
+
+const sheetPrefix = (job: ImportJob) => (job.sheet ? `${job.sheet} 시트: ` : '');
+const tag = (job: ImportJob, e: RowError): RowError => (job.sheet ? { sheet: job.sheet, ...e } : e);
+
+async function loadCustomDefs(tenant: Tenant, actor: Actor): Promise<CustomColumnDef[]> {
+  return (await tenant((db) => listCustomFields(db, actor))).filter((d) => d.is_active).map((d) => ({ key: d.key, label: d.label, data_type: d.data_type }));
+}
+
+/** 그 종류를 엑셀로 올릴 권한(종류별 업로드 라우트가 선언한 것과 같은 권한). perms 가 null 이면 관리자. */
+function canImportKind(perms: Set<string> | null, kind: ImportKind): boolean {
+  return perms === null || perms.has(permKey(IMPORT_RESOURCE[kind], IMPORT_OPERATION[kind]));
+}
+
+/**
+ * 시트 하나를 처리하기 전의 권한 검사. 종류별 업로드에서 하던 것과 같다.
+ * 등록 권한이 없으면 403 을 던지고, 배정·상태 처리 권한이 없으면 오류를 남기고 되돌린다.
+ */
+function checkJobPermissions(job: ImportJob, perms: Set<string> | null, errors: RowError[], checkImportPermission: boolean): void {
+  const { kind, rows } = job;
+  if (perms === null) return;
+  // 통합 파일 업로드는 라우트가 시트마다의 업로드 권한을 선언할 수 없어 여기서 확인한다(src/app/api/import/workbook/route.ts).
+  if (checkImportPermission && !canImportKind(perms, kind)) {
+    throw new HttpError(403, 'FORBIDDEN', `${sheetPrefix(job)}${IMPORT_TITLES[kind]} 업로드 권한이 없습니다. 이 시트를 비우거나 지운 뒤 올리거나 권한을 요청하세요.`);
+  }
+  // 업로드 권한은 "엑셀로 올릴 수 있다"는 것이고, 무엇을 만들 수 있는지는 등록 권한이 정한다. 둘 다 있어야 한다.
+  const createResource = IMPORT_CREATE_RESOURCE[kind];
+  if (createResource && !perms.has(permKey(createResource, 'create'))) {
+    throw new HttpError(403, 'FORBIDDEN', `${sheetPrefix(job)}${IMPORT_TITLES[kind]} 등록 권한이 없어 엑셀로 올릴 수 없습니다.`);
+  }
+  if (kind === 'assets' && !perms.has(permKey('asset.assign', 'execute')) && rows.some((r) => r.values.holderEmployeeNo)) {
+    errors.push(tag(job, { row: 1, message: '보유자사번을 적으려면 자산 배정 권한이 필요합니다. 그 열을 비우고 올리거나 권한을 요청하세요.' }));
+    throw new RollbackImport();
+  }
+  if (kind === 'assets') {
+    // 상태 열은 화면에서 그 처리를 할 권한이 있어야 쓸 수 있다.
+    const needed = new Set<string>();
+    for (const r of rows) {
+      let plan: StatusPlan | undefined;
+      try {
+        plan = statusPlan(text(r.values.status))?.plan;
+      } catch {
+        continue; // 알 수 없는 값은 행 오류로 보고된다.
+      }
+      for (const step of plan?.steps ?? []) needed.add(STATUS_STEP_RESOURCE[step.action]!);
+    }
+    for (const resource of needed) {
+      if (!perms.has(permKey(resource, 'execute'))) {
+        errors.push(tag(job, { row: 1, message: `상태 열에 적은 처리를 할 권한이 없습니다 (${resource === 'asset.retire' ? '분실·퇴역·폐기' : '불량·수리'}). 그 값을 지우고 올리거나 권한을 요청하세요.` }));
+        throw new RollbackImport();
+      }
+    }
+  }
+}
+
+type Created = ImportResult['created'];
+const emptyCreated = (): Created => ({ departments: [], categories: [], models: [] });
+
+/**
+ * 시트들을 차례로 한 트랜잭션에서 처리한다. 미리보기(commit=false)이거나 오류가 한 건이라도 있으면 전부 되돌린다.
+ * 반영하면 시트마다 감사 기록을 하나씩 남긴다(리소스 = 그 종류의 업로드 리소스).
+ * 돌려주는 created 는 미리보기에서도 채운다(만들게 될 기준 정보).
+ */
+async function executeJobs(
+  tenant: Tenant,
+  actor: Actor,
+  jobs: ImportJob[],
+  errors: RowError[],
+  options: { commit: boolean; checkImportPermission: boolean },
+): Promise<{ committed: boolean; created: Created }> {
+  const out = { committed: false, created: emptyCreated() };
   try {
     await tenant(async (db) => {
       // 같은 기업의 업로드는 한 번에 하나만. 기다리지 않고 바로 거절한다(기다리는 요청이 DB 연결을 붙잡고 쌓이지 않게).
@@ -396,58 +454,160 @@ export async function runImport(
       await lockMasterData(db, actor.companyId);
       const access = await loadDataAccess(db, actor);
       const perms = await actorPermissions(db, actor);
-      // 업로드 권한은 "엑셀로 올릴 수 있다"는 것이고, 무엇을 만들 수 있는지는 등록 권한이 정한다. 둘 다 있어야 한다.
-      const createResource = IMPORT_CREATE_RESOURCE[kind];
-      if (createResource && perms !== null && !perms.has(permKey(createResource, 'create'))) {
-        throw new HttpError(403, 'FORBIDDEN', `${IMPORT_TITLES[kind]} 등록 권한이 없어 엑셀로 올릴 수 없습니다.`);
-      }
-      if (kind === 'assets' && perms !== null && !perms.has(permKey('asset.assign', 'execute')) && rows.some((r) => r.values.holderEmployeeNo)) {
-        errors.push({ row: 1, message: '보유자사번을 적으려면 자산 배정 권한이 필요합니다. 그 열을 비우고 올리거나 권한을 요청하세요.' });
-        throw new RollbackImport();
-      }
-      if (kind === 'assets' && perms !== null) {
-        // 상태 열은 화면에서 그 처리를 할 권한이 있어야 쓸 수 있다.
-        const needed = new Set<string>();
-        for (const r of rows) {
-          let plan: StatusPlan | undefined;
-          try {
-            plan = statusPlan(text(r.values.status))?.plan;
-          } catch {
-            continue; // 알 수 없는 값은 행 오류로 보고된다.
-          }
-          for (const step of plan?.steps ?? []) needed.add(STATUS_STEP_RESOURCE[step.action]!);
-        }
-        for (const resource of needed) {
-          if (!perms.has(permKey(resource, 'execute'))) {
-            errors.push({ row: 1, message: `상태 열에 적은 처리를 할 권한이 없습니다 (${resource === 'asset.retire' ? '분실·퇴역·폐기' : '불량·수리'}). 그 값을 지우고 올리거나 권한을 요청하세요.` });
-            throw new RollbackImport();
-          }
-        }
-      }
+      // 모든 시트의 권한을 처리 전에 확인한다(뒤 시트의 권한이 없으면 앞 시트를 처리하지 않는다).
+      for (const job of jobs) checkJobPermissions(job, perms, errors, options.checkImportPermission);
       const master = new MasterData(db, actor, perms);
       // 한계 수량 판정은 행마다 하지 않고 끝에 한 번만 한다(행마다 하면 한계 수량 잠금을 업로드 내내 잡게 된다).
       deferEvaluation(db);
-      for (const { row, values } of rows) {
-        try {
-          await importRow(db, actor, access, master, kind, values);
-        } catch (err) {
-          // 업무 규칙 위반(HttpError)만 행 오류로 모은다. 쿼리 오류는 그대로 던져 전체를 실패시킨다.
-          if (!(err instanceof HttpError)) throw err;
-          errors.push({ row, message: err.message });
-          if (errors.length >= MAX_REPORTED_ERRORS) break;
+      const createdBy: Created[] = [];
+      outer: for (const job of jobs) {
+        const before = { d: master.created.departments.length, c: master.created.categories.length, m: master.created.models.length };
+        for (const { row, values } of job.rows) {
+          try {
+            await importRow(db, actor, access, master, job.kind, values);
+          } catch (err) {
+            // 업무 규칙 위반(HttpError)만 행 오류로 모은다. 쿼리 오류는 그대로 던져 전체를 실패시킨다.
+            if (!(err instanceof HttpError)) throw err;
+            errors.push(tag(job, { row, message: err.message }));
+            if (errors.length >= MAX_REPORTED_ERRORS) break outer;
+          }
         }
+        createdBy.push({
+          departments: master.created.departments.slice(before.d),
+          categories: master.created.categories.slice(before.c),
+          models: master.created.models.slice(before.m),
+        });
       }
-      result.created = master.created;
+      out.created = master.created;
       if (errors.length > 0 || !options.commit) throw new RollbackImport();
       await flushEvaluation(db, actor.companyId);
-      await writeAudit(db, {
-        companyId: actor.companyId, actorId: actor.userId, action: 'IMPORT_COMMITTED', resource: IMPORT_RESOURCE[kind],
-        after: { rows: rows.length, created: master.created }, ip: actor.auditIp,
-      });
-      result.committed = true;
+      for (const [i, job] of jobs.entries()) {
+        await writeAudit(db, {
+          companyId: actor.companyId, actorId: actor.userId, action: 'IMPORT_COMMITTED', resource: IMPORT_RESOURCE[job.kind],
+          after: job.sheet ? { rows: job.rows.length, created: createdBy[i], sheet: job.sheet, workbook: true } : { rows: job.rows.length, created: master.created },
+          ip: actor.auditIp,
+        });
+      }
+      out.committed = true;
     });
   } catch (err) {
     if (!(err instanceof RollbackImport)) throw err;
   }
+  return out;
+}
+
+/**
+ * 업로드를 실행한다. commit 이 false(미리보기)이거나 오류가 있으면 아무것도 남기지 않는다.
+ * tenant 는 라우트 핸들러가 받은 것을 그대로 넘긴다.
+ */
+export async function runImport(
+  tenant: Tenant,
+  actor: Actor,
+  kind: ImportKind,
+  sheet: Cell[][],
+  options: { commit: boolean },
+): Promise<ImportResult> {
+  const errors: RowError[] = [];
+  // 자산은 그 기업의 사용자 지정 필드를 열로 받는다. 머리글을 읽으려면 정의가 먼저 필요하다.
+  const customDefs: CustomColumnDef[] = kind === 'assets' ? await loadCustomDefs(tenant, actor) : [];
+  const rows = parseRows(kind, sheet, errors, customDefs);
+  const result: ImportResult = { kind, committed: false, totalRows: rows.length, errors, created: emptyCreated() };
+  if (errors.length) {
+    result.errors = errors.slice(0, MAX_REPORTED_ERRORS);
+    return result;
+  }
+  if (rows.length === 0) {
+    errors.push({ row: 2, message: '올릴 자료가 없습니다.' });
+    return result;
+  }
+  const done = await executeJobs(tenant, actor, [{ kind, rows }], errors, { commit: options.commit, checkImportPermission: false });
+  result.created = done.created;
+  result.committed = done.committed;
+  return result;
+}
+
+// ─────────────────────────── 통합 파일(직원·자산·주변기기 시트를 한 파일로) ───────────────────────────
+
+/** 통합 파일에서 읽는 시트. 이 순서로 처리한다(자산의 보유자사번이 같은 파일의 직원을 가리킬 수 있게). */
+export const WORKBOOK_SHEETS: { kind: ImportKind; sheet: string }[] = [
+  { kind: 'persons', sheet: IMPORT_TITLES.persons },
+  { kind: 'assets', sheet: IMPORT_TITLES.assets },
+  { kind: 'peripherals', sheet: IMPORT_TITLES.peripherals },
+];
+
+export interface WorkbookSheetResult {
+  kind: ImportKind;
+  sheet: string;
+  /** 처리한(미리보기에서는 처리할) 자료 행 수 */
+  totalRows: number;
+  /** 시트는 있지만 자료 행이 없어 건너뛰었다(권한도 묻지 않는다). */
+  skipped: boolean;
+}
+
+/** 통합 파일 업로드 결과. ImportResult 와 같은 모양에 시트별 행 수(sheets)를 더했다. totalRows 는 모든 시트의 합. */
+export interface WorkbookImportResult extends Omit<ImportResult, 'kind'> {
+  kind: 'workbook';
+  sheets: WorkbookSheetResult[];
+}
+
+/** 머리글(1행) 아래에 값이 있는 행이 하나라도 있는가. */
+const hasDataRows = (sheet: Cell[][]) => sheet.slice(1).some((cells) => cells?.some((c) => c !== null && c !== undefined));
+
+/**
+ * 통합 파일 업로드. sheets 는 시트 이름 → 행(readXlsxSheets 의 결과). WORKBOOK_SHEETS 에 없는 시트는 무시한다.
+ * 자료 행이 있는 시트를 직원 → 자산 → 주변기기 순서로 한 트랜잭션에서 처리한다. 전부 아니면 전무.
+ * 시트마다 종류별 업로드와 같은 권한(업로드 권한 + 등록·배정·상태 처리 권한)을 요구한다.
+ */
+export async function runWorkbookImport(
+  tenant: Tenant,
+  actor: Actor,
+  sheets: Map<string, Cell[][]>,
+  options: { commit: boolean },
+): Promise<WorkbookImportResult> {
+  const present = WORKBOOK_SHEETS.filter((s) => sheets.has(s.sheet));
+  if (present.length === 0) {
+    throw new HttpError(400, 'BAD_REQUEST', `${WORKBOOK_SHEETS.map((s) => s.sheet).join('·')} 시트가 없습니다. 통합 양식을 내려받아 시트 이름을 바꾸지 말고 입력하세요.`);
+  }
+  const errors: RowError[] = [];
+  const result: WorkbookImportResult = { kind: 'workbook', committed: false, totalRows: 0, errors, created: emptyCreated(), sheets: [] };
+  const filled = present.filter((s) => hasDataRows(sheets.get(s.sheet)!));
+
+  // 파일을 자세히 검사하기 전에 시트마다의 업로드 권한을 먼저 본다(권한이 없는 시트의 내용 오류를 늘어놓지 않게).
+  // 트랜잭션 안에서 한 번 더 확인한다(그사이 권한이 바뀐 경우).
+  const needsCustom = filled.some((s) => s.kind === 'assets');
+  const { perms, customDefs } = await tenant(async (db) => ({
+    perms: await actorPermissions(db, actor),
+    customDefs: needsCustom ? (await listCustomFields(db, actor)).filter((d) => d.is_active).map((d) => ({ key: d.key, label: d.label, data_type: d.data_type })) : [],
+  }));
+  for (const s of filled) {
+    if (!canImportKind(perms, s.kind)) {
+      throw new HttpError(403, 'FORBIDDEN', `${s.sheet} 시트: ${IMPORT_TITLES[s.kind]} 업로드 권한이 없습니다. 이 시트를 비우거나 지운 뒤 올리거나 권한을 요청하세요.`);
+    }
+  }
+
+  const jobs: ImportJob[] = [];
+  for (const s of present) {
+    if (!filled.includes(s)) {
+      result.sheets.push({ kind: s.kind, sheet: s.sheet, totalRows: 0, skipped: true });
+      continue;
+    }
+    const sheetErrors: RowError[] = [];
+    const rows = parseRows(s.kind, sheets.get(s.sheet)!, sheetErrors, s.kind === 'assets' ? customDefs : []);
+    for (const e of sheetErrors) errors.push({ sheet: s.sheet, ...e });
+    jobs.push({ kind: s.kind, sheet: s.sheet, rows });
+    result.sheets.push({ kind: s.kind, sheet: s.sheet, totalRows: rows.length, skipped: false });
+  }
+  result.totalRows = jobs.reduce((n, j) => n + j.rows.length, 0);
+  if (errors.length) {
+    result.errors = errors.slice(0, MAX_REPORTED_ERRORS);
+    return result;
+  }
+  if (jobs.length === 0) {
+    errors.push({ row: 2, message: `올릴 자료가 없습니다. ${present.map((s) => s.sheet).join('·')} 시트의 2행부터 입력하세요.` });
+    return result;
+  }
+  const done = await executeJobs(tenant, actor, jobs, errors, { commit: options.commit, checkImportPermission: true });
+  result.created = done.created;
+  result.committed = done.committed;
   return result;
 }

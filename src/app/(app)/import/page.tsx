@@ -2,7 +2,7 @@
 import { RequireCompany, useShell } from '../../shell';
 import { Notice, PageHeader } from '../../ui';
 import { ImportCard } from './import-card';
-import { IMPORT_KINDS, KIND_INFO } from './labels';
+import { KIND_INFO, UPLOAD_KINDS } from './labels';
 import { useT } from '../../i18n';
 import { TEXT } from './page.text';
 
@@ -17,7 +17,7 @@ export default function ImportPage() {
 function ImportInner() {
   const T = useT(TEXT);
   const { can } = useShell();
-  const kinds = IMPORT_KINDS.filter((k) => can(...KIND_INFO[k].permission));
+  const kinds = UPLOAD_KINDS.filter((k) => can(...KIND_INFO[k].permission));
   return (
     <div>
       <PageHeader title={T.title} />

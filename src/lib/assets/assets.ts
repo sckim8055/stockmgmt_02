@@ -344,8 +344,7 @@ export async function listAssets(
   return { total: count.rows[0]?.n ?? 0, page, pageSize, items: rows.rows.map((r) => present(r, access, defs)), summary, fields };
 }
 
-export async function getAsset(
-db: Db, actor: Actor, access: DataAccess, assetId: string): Promise<AssetRow> {
+export async function getAsset(db: Db, actor: Actor, access: DataAccess, assetId: string): Promise<AssetRow> {
   const { rows } = await db.query<AssetRow>(SQL_ASSET_ONE, [actor.companyId, access.scope, assetId]);
   const row = rows[0];
   if (!row) throw notFound(); // 다른 기업, 범위 밖 부서, 없는 ID 모두 같은 응답

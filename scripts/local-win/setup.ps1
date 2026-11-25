@@ -10,9 +10,11 @@ param(
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Expand-Zip([string]$zip, [string]$dest) {
+  if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
   New-Item -ItemType Directory -Force $dest | Out-Null
   $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
-  if (Test-Path $tar) { Run $tar @('-xf', $zip, '-C', $dest) } else { Expand-Archive -Path $zip -DestinationPath $dest -Force }
+  # -m: do not restore file times (tar.exe fails with "Can't restore time" on some drives)
+  if (Test-Path $tar) { Run $tar @('-xmf', $zip, '-C', $dest) } else { Expand-Archive -Path $zip -DestinationPath $dest -Force }
 }
 
 New-Item -ItemType Directory -Force $ToolsDir, $DataRoot, $SecretDir | Out-Null

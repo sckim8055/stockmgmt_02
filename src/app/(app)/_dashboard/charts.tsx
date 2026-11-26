@@ -159,6 +159,8 @@ export interface Slice {
   key: string;
   label: string;
   value: number;
+  /** 범례에 수 대신 적을 글(예: "제외됨"). 있으면 조각을 그리지 않는다. */
+  display?: string;
   color: string;
   pressed?: boolean;
   onSelect?: () => void;
@@ -179,9 +181,10 @@ export function Donut({ label, slices, centerLabel, centerValue }: { label: stri
   const T = useT(TEXT);
   const tip = useTooltip();
   const total = slices.reduce((n, s) => n + s.value, 0);
-  const shown = slices.filter((s) => s.value > 0);
+  const shown = slices.filter((s) => s.value > 0 && s.display === undefined);
   const pct = (v: number) => (total ? `${((v / total) * 100).toLocaleString(F.locale, { maximumFractionDigits: 1 })}%` : '0%');
-  const summary = `${label}: ${shown.map((s) => `${s.label} ${F.num(s.value)} (${pct(s.value)})`).join(', ')}`;
+  const notes = slices.filter((s) => s.display !== undefined).map((s) => `${s.label} ${s.display}`);
+  const summary = `${label}: ${[...shown.map((s) => `${s.label} ${F.num(s.value)} (${pct(s.value)})`), ...notes].join(', ')}`;
   let a = 0;
   return (
     <div className="donut" ref={tip.box}>
@@ -202,9 +205,10 @@ export function Donut({ label, slices, centerLabel, centerValue }: { label: stri
               ...pressable(s.onSelect),
               ...tip.bind(lines),
             };
-            // 한 조각이 전부면 고리 하나(호 경로는 시작과 끝이 같으면 그려지지 않는다)
+            // 한 조각이 전부면 고리 하나(호 경로는 시작과 끝이 같으면 그려지지 않는다).
+            // 색은 style 로 준다: .donut__slice 의 CSS stroke(조각 사이 테두리색)가 stroke 속성보다 우선해서 고리가 배경색으로 칠해졌다.
             return shown.length === 1 ? (
-              <circle key={s.key} {...common} cx={SIZE / 2} cy={SIZE / 2} r={(R_OUT + R_IN) / 2} fill="none" stroke={s.color} strokeWidth={R_OUT - R_IN} />
+              <circle key={s.key} {...common} cx={SIZE / 2} cy={SIZE / 2} r={(R_OUT + R_IN) / 2} fill="none" strokeWidth={R_OUT - R_IN} style={{ stroke: s.color }} />
             ) : (
               <path key={s.key} {...common} d={arc(a0, a1)} />
             );
@@ -217,10 +221,10 @@ export function Donut({ label, slices, centerLabel, centerValue }: { label: stri
       </div>
       <ul className="donut__legend" aria-hidden="true">
         {slices.map((s) => (
-          <li key={s.key} className={s.pressed ? 'is-pressed' : undefined}>
+          <li key={s.key} className={s.pressed ? 'is-pressed' : s.display !== undefined ? 'is-excluded' : undefined} data-legend-key={s.key}>
             <span className="chart-swatch" style={{ background: s.color }} />
             <span className="donut__legend-label">{s.label}</span>
-            <span className="donut__legend-num">{F.num(s.value)}</span>
+            <span className="donut__legend-num">{s.display ?? F.num(s.value)}</span>
           </li>
         ))}
       </ul>

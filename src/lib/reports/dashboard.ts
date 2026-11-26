@@ -109,17 +109,30 @@ const SQL_DASH_LABELS =
 // 이력 추이(월별·종류별 건수). 이력 테이블을 (기업, 시각 내림차순) 인덱스 순서로 기간 안에서만, 최근 $43 건까지 읽는다.
 // 자산: $1~$39 자산 조건(뺄 상태는 비운다: 등록 취소된 자산의 이력도 센다), $40 시작일, $41 시간대, $42 'month', $43 상한,
 //       $44 = 걸 조건이 없음(범위 제한도 조건도 없으면 자산 행을 찾지 않는다). 부서 범위는 지금의 관리 부서로(history.ts 와 같다).
+//       $45 = 엑셀 업로드로 남은 이력을 뺀다, $46 = 'IMPORT_COMMITTED'.
+// 엑셀 업로드 알아보기(스키마를 바꾸지 않고, 이미 있는 자료에도): 업로드는 이력과 그 감사 기록(IMPORT_COMMITTED, 통합 파일은 시트마다 하나)을
+//   한 트랜잭션에서 남기고, 세 테이블의 created_at 은 모두 DEFAULT now()(= 트랜잭션 시작 시각)이며 코드가 시각을 따로 넣지 않는다.
+//   그래서 같은 기업의 IMPORT_COMMITTED 감사 기록과 created_at 이 정확히 같은 이력은 업로드가 남긴 것이다. 다른 트랜잭션(같은 분·같은 초의
+//   직접 처리)은 시각이 다르다. 미리보기·실패한 업로드는 되돌려져 아무것도 남기지 않는다.
+//   그 기업·그 기간의 IMPORT_COMMITTED 시각을 한 번만(InitPlan) 모아 배열로 만들고, 이력 행마다 그 배열에 없는 것만 남긴다.
+//   감사 기록은 (company_id, created_at) 인덱스(audit_log_company_time_idx)의 그 기업·기간 범위만 읽는다(다른 기업의 감사 기록은 읽지 않는다).
+//   이력은 지금과 같이 (기업, 시각, seq) 인덱스 순서로 읽고 상한(LIMIT)을 건다. 배열이 비면 <> ALL 은 참이다(아무것도 빼지 않는다).
 const SQL_DASH_TREND_ASSET =
   'WITH w AS (SELECT t.created_at, t.type, t.asset_id, t.company_id FROM app.asset_txn t' +
   ' WHERE t.company_id = $1 AND t.created_at >= ($40::date::timestamp AT TIME ZONE $41::text)' +
+  ' AND ($45::boolean IS NOT TRUE OR t.created_at <> ALL (ARRAY(SELECT l.created_at FROM app.audit_log l' +
+  '   WHERE l.company_id = $1 AND l.action = $46::text AND l.created_at >= ($40::date::timestamp AT TIME ZONE $41::text))))' +
   ' ORDER BY t.created_at DESC, t.seq DESC LIMIT $43)' +
   ' SELECT (date_trunc($42::text, w.created_at AT TIME ZONE $41::text))::date::text AS month, w.type, count(*)::int AS n, (SELECT count(*) FROM w)::int AS scanned' +
   ' FROM w WHERE $44::boolean OR EXISTS (SELECT 1' + SQL_DASH_ASSETS + ' AND a.id = w.asset_id AND a.company_id = w.company_id)' +
   ' GROUP BY 1, 2 ORDER BY 1, 2';
-// 주변기기: $1 기업, $2 범위, $3 부서 조건, $4 시작일, $5 시간대, $6 'month', $7 상한, $8 = 걸 조건이 없음.
+// 주변기기: $1 기업, $2 범위, $3 부서 조건, $4 시작일, $5 시간대, $6 'month', $7 상한, $8 = 걸 조건이 없음,
+//          $9 = 엑셀 업로드로 남은 이력을 뺀다, $10 = 'IMPORT_COMMITTED'(위 자산 추이와 같은 규칙).
 const SQL_DASH_TREND_PERIPHERAL =
   'WITH w AS (SELECT t.created_at, t.type, t.stock_id, t.company_id FROM app.peripheral_txn t' +
   ' WHERE t.company_id = $1 AND t.created_at >= ($4::date::timestamp AT TIME ZONE $5::text)' +
+  ' AND ($9::boolean IS NOT TRUE OR t.created_at <> ALL (ARRAY(SELECT l.created_at FROM app.audit_log l' +
+  '   WHERE l.company_id = $1 AND l.action = $10::text AND l.created_at >= ($4::date::timestamp AT TIME ZONE $5::text))))' +
   ' ORDER BY t.created_at DESC, t.seq DESC LIMIT $7)' +
   ' SELECT (date_trunc($6::text, w.created_at AT TIME ZONE $5::text))::date::text AS month, w.type, count(*)::int AS n, (SELECT count(*) FROM w)::int AS scanned' +
   ' FROM w WHERE $8::boolean OR EXISTS (SELECT 1 FROM app.peripheral_stock s WHERE s.id = w.stock_id AND s.company_id = w.company_id' +
@@ -164,7 +177,12 @@ export interface DashboardQuery {
   /** DASH_DIMENSIONS 또는 'cf.<키>'. 기본 category */
   dimension?: string;
   trendMonths?: (typeof TREND_MONTHS)[number];
+  /** 이력 추이에서 엑셀 업로드가 남긴 이력을 뺀다(기본: 넣는다). */
+  excludeImports?: boolean;
 }
+
+/** 엑셀 업로드 반영의 감사 기록 이름(src/lib/import/run.ts) */
+const IMPORT_AUDIT_ACTION = 'IMPORT_COMMITTED';
 
 const CF_DIMENSION = /^cf\.[a-z][a-z0-9_]{0,39}$/;
 /** 모양만 본다(사용자 지정 필드가 이 기업의 정의에 있는지·읽을 수 있는지는 loadDashboard 가 본다). */
@@ -352,21 +370,23 @@ export async function loadDashboard(db: Db, actor: Actor, access: DataAccess, qu
     let truncated = false;
     let assetRows = null;
     let peripheralRows = null;
+    const excludeImports = query.excludeImports === true;
     if (trendAsset && filter) {
       const r = await db.query<{ month: string; type: string; n: number; scanned: number }>(SQL_DASH_TREND_ASSET, [
         ...filter.args(query.state ?? null, query.substate ?? null, query.active ? ['RETIRED'] : []), start, timezone, 'month', TREND_SCAN_CAP, access.scope === null && !filter.hasConditions,
+        excludeImports, IMPORT_AUDIT_ACTION,
       ]);
       truncated ||= r.rows.some((x) => x.scanned >= TREND_SCAN_CAP);
       assetRows = r.rows.map(({ month, type, n }) => ({ month, type, n }));
     }
     if (trendPeripheral) {
       const r = await db.query<{ month: string; type: string; n: number; scanned: number }>(SQL_DASH_TREND_PERIPHERAL, [
-        ...base, dept, start, timezone, 'month', TREND_SCAN_CAP, access.scope === null && dept === null,
+        ...base, dept, start, timezone, 'month', TREND_SCAN_CAP, access.scope === null && dept === null, excludeImports, IMPORT_AUDIT_ACTION,
       ]);
       truncated ||= r.rows.some((x) => x.scanned >= TREND_SCAN_CAP);
       peripheralRows = r.rows.map(({ month, type, n }) => ({ month, type, n }));
     }
-    trend = { months, timezone, asset: assetRows, peripheral: peripheralRows, truncated, scanCap: TREND_SCAN_CAP };
+    trend = { months, timezone, asset: assetRows, peripheral: peripheralRows, truncated, scanCap: TREND_SCAN_CAP, excludeImports };
   }
 
   let peripherals = null;

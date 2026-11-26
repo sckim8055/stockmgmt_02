@@ -9,7 +9,42 @@ export const ASSET_FILTER_KEYS = [
 ] as const;
 /** 대시보드 화면만의 설정(목록으로 옮기지 않는다) */
 export const VIEW_KEYS = ['dimension', 'trendMonths'] as const;
+/**
+ * 대시보드 화면만의 켜고 끄기(기본은 켜짐). 주소에는 끈 것만 남는다: retired=include(퇴역 포함), imports=include(엑셀 업로드 포함).
+ * API 의 기본값은 바뀌지 않았다(조건이 없으면 퇴역·업로드 모두 넣는다). 화면이 기본으로 active=true, excludeImports=true 를 보낸다.
+ */
+export const TOGGLE_KEYS = ['retired', 'imports'] as const;
+export const INCLUDE = 'include';
 export const CF_EQ_PREFIX = 'eq_cf.';
+
+/** 퇴역 자산을 빼고 보는가: "퇴역 제외"가 켜져 있거나(기본), 주소에 active=true 가 직접 걸려 있다(보증 구간에서 들어온 경우). */
+export const retiredExcluded = (sp: URLSearchParams): boolean => sp.get('retired') !== INCLUDE || sp.get('active') === 'true';
+/** 이력 추이에서 엑셀 업로드를 빼고 보는가(기본 켜짐) */
+export const importsExcluded = (sp: URLSearchParams): boolean => sp.get('imports') !== INCLUDE;
+
+/** 주소 → 실제로 거는 조건. 켜고 끄기는 지우고, "퇴역 제외"가 켜져 있으면 active=true 를 더한다. 자산 목록·API 로 옮기는 것은 이것이다. */
+export function effectiveFilters(sp: URLSearchParams): URLSearchParams {
+  const p = new URLSearchParams(sp);
+  for (const k of TOGGLE_KEYS) p.delete(k);
+  if (retiredExcluded(sp)) p.set('active', 'true');
+  return p;
+}
+
+/** "퇴역 제외"를 켜거나 끈다. 끄면 active 조건도 지운다(켜기와 끄기가 서로 되돌린다). */
+export function setRetiredExcluded(sp: URLSearchParams, on: boolean): URLSearchParams {
+  const p = new URLSearchParams(sp);
+  p.delete('active');
+  if (on) p.delete('retired');
+  else p.set('retired', INCLUDE);
+  return p;
+}
+
+export function setImportsExcluded(sp: URLSearchParams, on: boolean): URLSearchParams {
+  const p = new URLSearchParams(sp);
+  if (on) p.delete('imports');
+  else p.set('imports', INCLUDE);
+  return p;
+}
 
 export const isAssetFilterKey = (k: string): boolean => (ASSET_FILTER_KEYS as readonly string[]).includes(k) || k.startsWith(CF_EQ_PREFIX);
 
@@ -70,7 +105,7 @@ export function removeFilter(sp: URLSearchParams, key: string, blankName?: strin
 
 export function clearFilters(sp: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams();
-  for (const k of VIEW_KEYS) if (sp.get(k)) next.set(k, sp.get(k)!);
+  for (const k of [...VIEW_KEYS, ...TOGGLE_KEYS]) if (sp.get(k)) next.set(k, sp.get(k)!);
   return next;
 }
 

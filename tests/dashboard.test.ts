@@ -13,7 +13,9 @@ import type { Db } from '@/lib/db/context';
 import { closePool } from '@/lib/db/pool';
 import type { Actor } from '@/lib/http/route';
 import { loadDashboard } from '@/lib/reports/dashboard';
-import { addFilter, assetsHref, historyHref, peripheralsHref, removeFilter } from '@/app/(app)/_dashboard/filters';
+import {
+  addFilter, assetsHref, clearFilters, effectiveFilters, historyHref, importsExcluded, peripheralsHref, removeFilter, retiredExcluded, setImportsExcluded, setRetiredExcluded,
+} from '@/app/(app)/_dashboard/filters';
 import { APP_ROLE, call, closeOwner, makeCompany, makeUser, owner, sessionFor, uniq, type TestCompany } from './helpers';
 
 let A: TestCompany;
@@ -520,6 +522,56 @@ describe('한 번 부를 때의 쿼리 수', () => {
     } finally {
       await s.end();
     }
+  });
+});
+
+describe('퇴역 제외(화면의 기본값: active=true)', () => {
+  it('active=true 의 모든 패널·구간 = active=true 를 건 목록의 건수(관리자, 부서 범위 사용자, 다른 조건과 겹쳐도)', async () => {
+    const active = new URLSearchParams({ active: 'true' });
+    expect(await listTotal('admin', active)).toBe(seeds.filter((s) => s.state !== 'RETIRED').length);
+    await expectExact('admin', active);
+    await expectExact('hruser', active);
+    await expectExact('admin', new URLSearchParams({ active: 'true', categoryId: id.laptop!, hasHolder: 'true' }));
+    await expectExact('admin', new URLSearchParams({ active: 'true', state: 'IN_STOCK' }));
+  });
+
+  it('active=true 이면 도넛·핵심 수치에 퇴역이 없고, 나머지 상태의 수는 그대로다', async () => {
+    const all = (await dash('admin')).assets;
+    const act = (await dash('admin', 'active=true')).assets;
+    expect(act.byState.some((r: { state: string }) => r.state === 'RETIRED')).toBe(false);
+    expect(act.kpi.retired).toBe(0);
+    expect(all.kpi.retired).toBe(seeds.filter((s) => s.state === 'RETIRED').length);
+    expect(act.total).toBe(all.total - all.kpi.retired);
+    expect({ ...act.kpi, retired: undefined, total: undefined }).toEqual({ ...all.kpi, retired: undefined, total: undefined });
+  });
+
+  it('화면의 켜고 끄기: 주소에 없으면 퇴역 제외·업로드 제외, 끈 것만 주소에 남고, 목록으로는 active=true 가 옮겨진다', () => {
+    const none = new URLSearchParams();
+    expect(retiredExcluded(none)).toBe(true);
+    expect(importsExcluded(none)).toBe(true);
+    expect(effectiveFilters(none).toString()).toBe('active=true');
+    expect(assetsHref(effectiveFilters(new URLSearchParams({ categoryId: 'c', dimension: 'model' })))).toBe('/assets?categoryId=c&active=true');
+    // 끄기 → retired=include, 다시 켜기 → 처음과 같다
+    const off = setRetiredExcluded(new URLSearchParams({ categoryId: 'c' }), false);
+    expect(off.toString()).toBe('categoryId=c&retired=include');
+    expect(retiredExcluded(off)).toBe(false);
+    expect(effectiveFilters(off).toString()).toBe('categoryId=c');
+    expect(assetsHref(effectiveFilters(off))).toBe('/assets?categoryId=c');
+    expect(setRetiredExcluded(off, true).toString()).toBe('categoryId=c');
+    // 보증 구간에서 들어와 active=true 가 직접 걸린 경우: 켜짐으로 보이고, 끄면 active 도 지운다
+    const wsp = new URLSearchParams({ retired: 'include', active: 'true', warrantyFrom: '2026-01-01' });
+    expect(retiredExcluded(wsp)).toBe(true);
+    expect(setRetiredExcluded(wsp, false).toString()).toBe('retired=include&warrantyFrom=2026-01-01');
+    // 업로드 제외
+    const io = setImportsExcluded(none, false);
+    expect(io.toString()).toBe('imports=include');
+    expect(importsExcluded(io)).toBe(false);
+    expect(setImportsExcluded(io, true).toString()).toBe('');
+    expect(effectiveFilters(io).has('imports')).toBe(false);
+    // "모두 지우기"는 켜고 끄기를 남긴다
+    expect(clearFilters(new URLSearchParams({ retired: 'include', imports: 'include', state: 'IN_USE', trendMonths: '3' })).toString()).toBe('trendMonths=3&retired=include&imports=include');
+    // 이력 화면으로는 옮길 수 없다(설명에 나온다)
+    expect(historyHref(effectiveFilters(none), 'ASSET', '2026-02-01').leftOut).toEqual(['active']);
   });
 });
 

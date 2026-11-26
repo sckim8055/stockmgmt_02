@@ -16,7 +16,8 @@ import { TEXT } from './page.text';
 import { useFmt } from '../i18n/format';
 import { ChartPanel, Columns, DataTable, Donut, LegendList, Sparkline, StackedBars, type BarRow, type Column, type Legend, type Slice } from './_dashboard/charts';
 import {
-  addFilter, assetFilters, assetsHref, blankList, CF_EQ_PREFIX, clearFilters, hasAnyFilter, historyHref, loansHref, monthEnd, peripheralsHref, removeFilter, VIEW_KEYS,
+  addFilter, assetFilters, assetsHref, blankList, CF_EQ_PREFIX, clearFilters, effectiveFilters, hasAnyFilter, historyHref, importsExcluded, loansHref, monthEnd,
+  peripheralsHref, removeFilter, retiredExcluded, setImportsExcluded, setRetiredExcluded, VIEW_KEYS,
 } from './_dashboard/filters';
 
 type StateRow = { state: string; substate: string | null; n: number };
@@ -39,7 +40,10 @@ interface DashboardData {
     attention: { overdue: AttentionRow[]; warranty: AttentionRow[]; missing: AttentionRow[] };
     fields: { dimensions: string[]; custom: { key: string; label: string; data_type: string }[] };
   } | null;
-  trend: { months: string[]; asset: { month: string; type: string; n: number }[] | null; peripheral: { month: string; type: string; n: number }[] | null; truncated: boolean; scanCap: number } | null;
+  trend: {
+    months: string[]; asset: { month: string; type: string; n: number }[] | null; peripheral: { month: string; type: string; n: number }[] | null;
+    truncated: boolean; scanCap: number; excludeImports: boolean;
+  } | null;
   peripherals: { onHand: number; onLoan: number; stockRows: number } | null;
   peripheralCategories: { categories: number; rows: { id: string; name: string; onHand: number; onLoan: number }[] } | null;
   loans: { open: number; overdue: number } | null;
@@ -107,10 +111,14 @@ function Welcome() {
   );
 }
 
-/** 주소의 조건 중 대시보드 API 에 넘길 것(자산 조건 + 화면 설정). 모르는 이름은 넘기지 않는다(400 이 되지 않게). */
+/**
+ * 주소의 조건 중 대시보드 API 에 넘길 것(자산 조건 + 화면 설정). 모르는 이름은 넘기지 않는다(400 이 되지 않게).
+ * 켜고 끄기: "퇴역 제외"(기본 켜짐) → active=true, "엑셀 업로드 제외"(기본 켜짐) → excludeImports=true.
+ */
 function apiParams(sp: URLSearchParams): URLSearchParams {
-  const p = assetFilters(sp);
+  const p = assetFilters(effectiveFilters(sp));
   for (const k of VIEW_KEYS) if (sp.get(k)) p.set(k, sp.get(k)!);
+  if (importsExcluded(sp)) p.set('excludeImports', 'true');
   return p;
 }
 
@@ -123,6 +131,9 @@ function Dashboard() {
   const search = useSearchParams();
   const spKey = search.toString();
   const sp = useMemo(() => new URLSearchParams(spKey), [spKey]);
+  // 목록으로 옮길 조건(주소 + "퇴역 제외"가 켜져 있으면 active=true). 주소를 바꿀 때(go·drill)는 sp 를 쓴다.
+  const eff = useMemo(() => effectiveFilters(sp), [sp]);
+  const noRetired = retiredExcluded(sp);
   const apiKey = apiParams(sp).toString();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -181,6 +192,7 @@ function Dashboard() {
           {showFilters ? (
             <FilterBar
               sp={sp}
+              eff={eff}
               data={data}
               go={go}
               deptOptions={deptOptions}
@@ -190,7 +202,7 @@ function Dashboard() {
           ) : null}
 
           <div className="kpi-row">
-            {a ? <AssetKpis a={a} sp={sp} drill={drill} today={data.today} trend={data.trend} /> : null}
+            {a ? <AssetKpis a={a} sp={sp} noRetired={noRetired} drill={drill} today={data.today} trend={data.trend} /> : null}
             {data.peripherals ? (
               <Card title={T.peripherals} testId="dash-peripherals" tone="green">
                 <Rows>
@@ -220,15 +232,15 @@ function Dashboard() {
           <div className="dash-grid">
             {a ? (
               <>
-                <StatusPanel a={a} sp={sp} drill={drill} />
-                <BreakdownPanel a={a} sp={sp} drill={drill} go={go} fieldLabel={fieldLabel} />
-                <AgePanel a={a} sp={sp} drill={drill} />
-                <WarrantyPanel a={a} sp={sp} drill={drill} today={data.today} />
+                <StatusPanel a={a} sp={sp} eff={eff} noRetired={noRetired} drill={drill} />
+                <BreakdownPanel a={a} sp={sp} eff={eff} noRetired={noRetired} drill={drill} go={go} fieldLabel={fieldLabel} />
+                <AgePanel a={a} sp={sp} eff={eff} drill={drill} />
+                <WarrantyPanel a={a} sp={sp} eff={eff} drill={drill} today={data.today} />
               </>
             ) : null}
-            {data.trend ? <TrendPanel trend={data.trend} sp={sp} go={go} kind={trendKind} setKind={setTrendKind} canHistory={can('history.stock', 'read')} /> : null}
+            {data.trend ? <TrendPanel trend={data.trend} sp={sp} eff={eff} go={go} kind={trendKind} setKind={setTrendKind} canHistory={can('history.stock', 'read')} /> : null}
             {data.peripheralCategories ? <PeripheralPanel data={data} sp={sp} /> : null}
-            {a ? <AttentionPanel a={a} sp={sp} today={data.today} /> : null}
+            {a ? <AttentionPanel a={a} eff={eff} today={data.today} /> : null}
           </div>
         </div>
       ) : null}
@@ -239,9 +251,10 @@ function Dashboard() {
 // ───────────────────────── 조건 칸 ─────────────────────────
 
 function FilterBar({
-  sp, data, go, deptOptions, categories, fieldLabel,
+  sp, eff, data, go, deptOptions, categories, fieldLabel,
 }: {
   sp: URLSearchParams;
+  eff: URLSearchParams;
   data: DashboardData;
   go: (next: URLSearchParams) => void;
   deptOptions: DepartmentOption[];
@@ -256,6 +269,7 @@ function FilterBar({
   const stateValue = state ? (sp.get('substate') ? `${state}:${sp.get('substate')}` : state) : '';
   const chips = useChips(sp, data, fieldLabel);
   const a = data.assets;
+  const noRetired = retiredExcluded(sp);
   return (
     <section className="dash-filters" aria-label={T.filterBar} data-testid="dashboard-filters">
       <div className="dash-filters__controls">
@@ -289,16 +303,27 @@ function FilterBar({
               }}
             >
               <option value="">{T.all}</option>
-              {STATE_ORDER.map((s) => [
-                <option key={s} value={s}>{AL.state[s]}</option>,
-                ...STATE_SUBSTATES[s].map((sub) => <option key={`${s}:${sub}`} value={`${s}:${sub}`}>{`${AL.state[s]} · ${AL.substate[sub]}`}</option>),
-              ])}
+              {/* "퇴역 제외"가 켜져 있으면 퇴역 상태는 고를 수 없다(언제나 0 이 된다). */}
+              {STATE_ORDER.map((s) => {
+                const off = noRetired && s === 'RETIRED';
+                const tail = off ? ` (${T.excluded})` : '';
+                return [
+                  <option key={s} value={s} disabled={off}>{AL.state[s]}{tail}</option>,
+                  ...STATE_SUBSTATES[s].map((sub) => <option key={`${s}:${sub}`} value={`${s}:${sub}`} disabled={off}>{`${AL.state[s]} · ${AL.substate[sub]}${tail}`}</option>),
+                ];
+              })}
             </select>
+          </label>
+        ) : null}
+        {a ? (
+          <label className="dash-check" title={T.excludeRetiredHint}>
+            <input type="checkbox" checked={noRetired} onChange={(e) => go(setRetiredExcluded(sp, e.target.checked))} data-testid="toggle-exclude-retired" />
+            <span>{T.excludeRetired}</span>
           </label>
         ) : null}
         <div className="dash-filters__actions">
           {hasAnyFilter(sp) ? <button type="button" className="btn btn--secondary btn--small" onClick={() => go(clearFilters(sp))} data-testid="filters-clear">{T.clearAll}</button> : null}
-          {a ? <Link className="btn btn--primary btn--small" href={assetsHref(sp)} data-testid="dash-view-list">{T.viewAssetList(F.num(a.total))}</Link> : null}
+          {a ? <Link className="btn btn--primary btn--small" href={assetsHref(eff)} data-testid="dash-view-list">{T.viewAssetList(F.num(a.total))}</Link> : null}
         </div>
       </div>
       <div className="dash-chips-row">
@@ -352,7 +377,7 @@ function useChips(sp: URLSearchParams, data: DashboardData, fieldLabel: (key: st
   if (sp.get('noPurchaseDate')) out.push({ id: 'noPurchaseDate', name: dims('purchase'), value: T.chipNone, remove: rm('noPurchaseDate') });
   if (sp.get('warrantyFrom') || sp.get('warrantyTo')) out.push({ id: 'warranty', name: dims('warranty'), value: range(sp.get('warrantyFrom'), sp.get('warrantyTo')), remove: rm('warrantyFrom', ['warrantyTo']) });
   if (sp.get('noWarrantyEnd')) out.push({ id: 'noWarrantyEnd', name: dims('warranty'), value: T.chipNone, remove: rm('noWarrantyEnd') });
-  if (sp.get('active')) out.push({ id: 'active', name: dims('active'), value: T.chipActive, remove: rm('active') });
+  // active(퇴역 제외)는 칩이 아니라 "퇴역 제외" 켜고 끄기로 보인다(보증 구간에서 들어와 직접 걸린 경우에도 켜짐으로 보인다).
   // 빵 부스러기처럼 걸린 순서대로(주소의 매개변수 순서 = 더한 순서. 같은 이름을 다시 걸면 자리는 그대로다).
   const keys = [...sp.keys()];
   const pos = (c: Chip) => {
@@ -366,10 +391,11 @@ function useChips(sp: URLSearchParams, data: DashboardData, fieldLabel: (key: st
 // ───────────────────────── 핵심 수치 ─────────────────────────
 
 function AssetKpis({
-  a, sp, drill, today, trend,
+  a, sp, noRetired, drill, today, trend,
 }: {
   a: NonNullable<DashboardData['assets']>;
   sp: URLSearchParams;
+  noRetired: boolean;
   drill: (p: Record<string, string | null>) => void;
   today: string;
   trend: DashboardData['trend'];
@@ -393,19 +419,31 @@ function AssetKpis({
     return d.toISOString().slice(0, 10);
   })();
   const monthly = trend?.asset ? trend.months.map((m) => trend.asset!.filter((r) => r.month === m).reduce((n, r) => n + r.n, 0)) : null;
+  // 반납 기한 지남은 사용 중인 자산만이라 퇴역 제외(active)와 상관없이 같은 수다. 그래서 이 링크는 지금처럼 active 를 붙이지 않는다.
   const overdueText = <span className={a.overdue > 0 ? 'stat-num stat-num--alert' : 'stat-num'}>{F.num(a.overdue)}</span>;
   return (
     <section aria-label={T.kpiTitle} data-testid="dash-assets" className="stat-card stat-card--blue kpi-card">
       <h2 className="stat-card__title">{T.kpiTitle}</h2>
       <div className="kpi-card__body">
         <div className="kpi-hero">
-          <div className="stat-card__label">{T.assetsTotal}</div>
+          <div className="stat-card__label" data-testid="total-label">{noRetired ? T.assetsTotalNoRetired : T.assetsTotal}</div>
           <div data-testid="big-value" className="stat-card__value">{F.num(a.kpi.total)}</div>
         </div>
         {/* 상태 칸: 누르면 그 상태로 거른다. 글자와 수는 한 줄 글로 읽힌다(예: "사용 중 2"). */}
         <ul className="kpi-tiles" aria-label={T.byState}>
           {tiles.map((t) => {
             const pressed = st === t.state && (t.substate ? sub === t.substate : !sub);
+            // "퇴역 제외"가 켜져 있으면 퇴역 칸은 0 대신 "제외됨"으로 보이고 누를 수 없다.
+            if (t.key === 'RETIRED' && noRetired) {
+              return (
+                <li key={t.key}>
+                  <div className="kpi-tile kpi-tile--excluded" title={T.excludedHint} data-testid={`kpi-${t.key}`}>
+                    <span className="kpi-tile__label"><span className="chart-swatch" style={{ background: t.color }} aria-hidden="true" />{t.label}</span>{' '}
+                    <span className="kpi-tile__value kpi-tile__value--muted">{T.excluded}</span>
+                  </div>
+                </li>
+              );
+            }
             return (
               <li key={t.key}>
                 <button
@@ -445,10 +483,10 @@ function AssetKpis({
           </div>
           {monthly ? (
             <div style={{ display: 'contents' }}>
-              <dt>{T.activity}</dt>
+              <dt>{trend?.excludeImports ? T.activityNoImports : T.activity}</dt>
               <dd className="kpi-spark">
-                <Sparkline values={monthly} label={T.activitySpark(F.num(monthly[monthly.length - 1] ?? 0))} />
-                <span className="stat-num">{F.num(monthly[monthly.length - 1] ?? 0)}</span>
+                <Sparkline values={monthly} label={`${T.activitySpark(F.num(monthly[monthly.length - 1] ?? 0))}${trend?.excludeImports ? ` (${T.excludeImports})` : ''}`} />
+                <span className="stat-num" data-testid="kpi-activity">{F.num(monthly[monthly.length - 1] ?? 0)}</span>
               </dd>
             </div>
           ) : null}
@@ -460,7 +498,15 @@ function AssetKpis({
 
 // ───────────────────────── 상태 도넛 ─────────────────────────
 
-function StatusPanel({ a, sp, drill }: { a: NonNullable<DashboardData['assets']>; sp: URLSearchParams; drill: (p: Record<string, string | null>) => void }) {
+function StatusPanel({
+  a, sp, eff, noRetired, drill,
+}: {
+  a: NonNullable<DashboardData['assets']>;
+  sp: URLSearchParams;
+  eff: URLSearchParams;
+  noRetired: boolean;
+  drill: (p: Record<string, string | null>) => void;
+}) {
   const T = useT(TEXT);
   const F = useFmt();
   const AL = useAssetLabels();
@@ -480,22 +526,24 @@ function StatusPanel({ a, sp, drill }: { a: NonNullable<DashboardData['assets']>
       continue;
     }
     const pressed = st === s && !sub;
+    // "퇴역 제외"가 켜져 있으면 퇴역 조각은 그리지 않고, 범례·표에는 0 대신 "제외됨"으로 적는다.
+    if (s === 'RETIRED' && noRetired) {
+      slices.push({ key: s, label: AL.state[s], value: 0, display: T.excluded, color: STATE_COLOR[s]! });
+      continue;
+    }
     slices.push({ key: s, label: AL.state[s], value: n((r) => r.state === s), color: STATE_COLOR[s]!, pressed, onSelect: () => drill(pressed ? { state: null, substate: null } : { state: s, substate: null }) });
   }
   for (const s of slices) if (s.value === 0) delete s.onSelect;
   const total = slices.reduce((x, s) => x + s.value, 0);
-  const noState = new URLSearchParams(sp);
-  noState.delete('state');
-  noState.delete('substate');
   return (
     <ChartPanel
       title={T.statusTitle}
       testId="dash-status"
       hint={T.statusHint}
-      actions={<Link className="dash-link-btn" href={assetsHref(sp)}>{T.viewList}</Link>}
-      table={<DataTable caption={T.statusTitle} head={[T.colItem, T.colCount]} rows={slices.map((s) => [s.label, s.value])} />}
+      actions={<Link className="dash-link-btn" href={assetsHref(eff)}>{T.viewList}</Link>}
+      table={<DataTable caption={T.statusTitle} head={[T.colItem, T.colCount]} rows={slices.map((s) => [s.label, s.display ?? s.value])} />}
     >
-      <Donut label={T.statusTitle} slices={slices} centerLabel={T.statusCenter} centerValue={F.num(total)} />
+      <Donut label={T.statusTitle} slices={slices} centerLabel={noRetired ? T.statusCenterNoRetired : T.statusCenter} centerValue={F.num(total)} />
     </ChartPanel>
   );
 }
@@ -527,10 +575,12 @@ function isGroupActive(sp: URLSearchParams, dimension: string, key: string | nul
 }
 
 function BreakdownPanel({
-  a, sp, drill, go, fieldLabel,
+  a, sp, eff, noRetired, drill, go, fieldLabel,
 }: {
   a: NonNullable<DashboardData['assets']>;
   sp: URLSearchParams;
+  eff: URLSearchParams;
+  noRetired: boolean;
   drill: (p: Record<string, string | null>) => void;
   go: (n: URLSearchParams) => void;
   fieldLabel: (key: string) => string;
@@ -540,7 +590,7 @@ function BreakdownPanel({
   const AL = useAssetLabels();
   const b = a.breakdown;
   const dim = b.dimension;
-  const series: Legend[] = STATE_ORDER.map((s) => ({ key: s, label: AL.state[s], color: STATE_COLOR[s]! }));
+  const series: Legend[] = STATE_ORDER.map((s) => ({ key: s, label: s === 'RETIRED' && noRetired ? `${AL.state[s]} (${T.excluded})` : AL.state[s], color: STATE_COLOR[s]! }));
   const name = (g: Group) => {
     if (dim === 'holder') return g.key === 'true' ? T.holderYes : T.holderNo;
     return g.label ?? T.blankValue;
@@ -584,7 +634,7 @@ function BreakdownPanel({
               {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <Link className="dash-link-btn" href={assetsHref(sp)}>{T.viewList}</Link>
+          <Link className="dash-link-btn" href={assetsHref(eff)}>{T.viewList}</Link>
         </>
       }
       table={
@@ -607,7 +657,7 @@ function BreakdownPanel({
 
 // ───────────────────────── 구매 연도 ─────────────────────────
 
-function AgePanel({ a, sp, drill }: { a: NonNullable<DashboardData['assets']>; sp: URLSearchParams; drill: (p: Record<string, string | null>) => void }) {
+function AgePanel({ a, sp, eff, drill }: { a: NonNullable<DashboardData['assets']>; sp: URLSearchParams; eff: URLSearchParams; drill: (p: Record<string, string | null>) => void }) {
   const T = useT(TEXT);
   const series: Legend[] = [{ key: 'n', label: T.colCount, color: SERIES(0) }];
   const cols: Column[] = a.age.map((b) => {
@@ -622,7 +672,7 @@ function AgePanel({ a, sp, drill }: { a: NonNullable<DashboardData['assets']>; s
       title={T.ageTitle}
       testId="dash-age"
       hint={T.ageHint}
-      actions={<Link className="dash-link-btn" href={assetsHref(sp)}>{T.viewList}</Link>}
+      actions={<Link className="dash-link-btn" href={assetsHref(eff)}>{T.viewList}</Link>}
       table={<DataTable caption={T.ageTitle} head={[T.colItem, T.colCount]} rows={cols.map((c) => [c.title ?? c.label, c.parts.n ?? 0])} />}
     >
       <Columns label={T.ageTitle} series={series} columns={cols} testId="age-chart" />
@@ -632,7 +682,15 @@ function AgePanel({ a, sp, drill }: { a: NonNullable<DashboardData['assets']>; s
 
 // ───────────────────────── 보증 만료 ─────────────────────────
 
-function WarrantyPanel({ a, sp, drill, today }: { a: NonNullable<DashboardData['assets']>; sp: URLSearchParams; drill: (p: Record<string, string | null>) => void; today: string }) {
+function WarrantyPanel({
+  a, sp, eff, drill, today,
+}: {
+  a: NonNullable<DashboardData['assets']>;
+  sp: URLSearchParams;
+  eff: URLSearchParams;
+  drill: (p: Record<string, string | null>) => void;
+  today: string;
+}) {
   const T = useT(TEXT);
   const series: Legend[] = [{ key: 'n', label: T.colCount, color: SERIES(0) }];
   const cols: Column[] = a.warranty.map((b) => {
@@ -645,7 +703,7 @@ function WarrantyPanel({ a, sp, drill, today }: { a: NonNullable<DashboardData['
       title={T.warrantyTitle}
       testId="dash-warranty"
       hint={T.warrantyHint(today)}
-      actions={<Link className="dash-link-btn" href={assetsHref(sp, { active: 'true' })}>{T.viewList}</Link>}
+      actions={<Link className="dash-link-btn" href={assetsHref(eff, { active: 'true' })}>{T.viewList}</Link>}
       table={<DataTable caption={T.warrantyTitle} head={[T.colItem, T.colCount]} rows={cols.map((c) => [c.title ?? c.label, c.parts.n ?? 0])} />}
     >
       <Columns label={T.warrantyTitle} series={series} columns={cols} testId="warranty-chart" />
@@ -656,10 +714,11 @@ function WarrantyPanel({ a, sp, drill, today }: { a: NonNullable<DashboardData['
 // ───────────────────────── 처리 추이 ─────────────────────────
 
 function TrendPanel({
-  trend, sp, go, kind, setKind, canHistory,
+  trend, sp, eff, go, kind, setKind, canHistory,
 }: {
   trend: NonNullable<DashboardData['trend']>;
   sp: URLSearchParams;
+  eff: URLSearchParams;
   go: (n: URLSearchParams) => void;
   kind: 'ASSET' | 'PERIPHERAL';
   setKind: (k: 'ASSET' | 'PERIPHERAL') => void;
@@ -678,11 +737,13 @@ function TrendPanel({
   const cols: Column[] = months.map((m) => {
     const parts: Record<string, number> = {};
     for (const r of rows) if (r.month === m) parts[map[r.type] ?? 'other'] = (parts[map[r.type] ?? 'other'] ?? 0) + r.n;
-    const h = historyHref(sp, k, m);
+    const h = historyHref(eff, k, m);
     return { key: m, label: T.monthShort(m), title: T.month(m), parts, onSelect: canHistory ? () => router.push(h.href) : undefined };
   });
   const total = cols.reduce((n, c) => n + Object.values(c.parts).reduce((x, y) => x + y, 0), 0);
-  const left = historyHref(sp, k, months[0]!).leftOut;
+  // 이력 화면으로 옮겨지지 않는 조건(퇴역 제외 포함). 엑셀 업로드 제외도 이력 화면에는 걸리지 않는다(아래 설명).
+  const left = historyHref(eff, k, months[0]!).leftOut;
+  const noImports = importsExcluded(sp);
   const months3 = ['3', '6', '12'];
   const cur = sp.get('trendMonths') ?? '12';
   const viewHref = `/history/stock?${new URLSearchParams({ kind: k, from: months[0]!, to: monthEnd(months[months.length - 1]!) })}`;
@@ -694,12 +755,17 @@ function TrendPanel({
       hint={
         <>
           {T.trendHint} {T.trendScopeNote}
-          {left.length && hasAnyFilter(sp) ? <> <strong>{T.leftOut(left.map((x) => T.chip[x] ?? x).join(', '))}</strong></> : null}
+          {noImports ? <> {T.trendImportsNote}</> : null}
+          {left.length && hasAnyFilter(eff) ? <> <strong>{T.leftOut(left.map((x) => T.chip[x] ?? x).join(', '))}</strong></> : null}
           {trend.truncated ? <> {T.trendTruncated(F.num(trend.scanCap))}</> : null}
         </>
       }
       actions={
         <>
+          <label className="dash-check" title={T.excludeImportsHint}>
+            <input type="checkbox" checked={noImports} onChange={(e) => go(setImportsExcluded(sp, e.target.checked))} data-testid="toggle-exclude-imports" />
+            <span>{T.excludeImports}</span>
+          </label>
           {trend.asset && trend.peripheral ? (
             <div className="seg" role="group" aria-label={T.trendKind}>
               <button type="button" aria-pressed={k === 'ASSET'} onClick={() => setKind('ASSET')}>{T.trendAsset}</button>
@@ -818,7 +884,7 @@ function PeripheralPanel({ data, sp }: { data: DashboardData; sp: URLSearchParam
 
 // ───────────────────────── 확인이 필요한 자산 ─────────────────────────
 
-function AttentionPanel({ a, sp, today }: { a: NonNullable<DashboardData['assets']>; sp: URLSearchParams; today: string }) {
+function AttentionPanel({ a, eff, today }: { a: NonNullable<DashboardData['assets']>; eff: URLSearchParams; today: string }) {
   const T = useT(TEXT);
   const F = useFmt();
   const soonTo = (() => {
@@ -827,9 +893,9 @@ function AttentionPanel({ a, sp, today }: { a: NonNullable<DashboardData['assets
     return d.toISOString().slice(0, 10);
   })();
   const lists: { key: string; title: string; total: number; rows: AttentionRow[]; href: string; meta: (r: AttentionRow) => string }[] = [
-    { key: 'overdue', title: T.attOverdue, total: a.overdue, rows: a.attention.overdue, href: assetsHref(sp, { overdue: 'true' }), meta: (r) => `${r.holder_name ?? ''} · ${T.attDue(r.due_date ?? '')}` },
-    { key: 'warranty', title: T.attWarranty, total: a.warrantySoon, rows: a.attention.warranty, href: assetsHref(addFilter(sp, { warrantyFrom: today, warrantyTo: soonTo, active: 'true' })), meta: (r) => T.attWarrantyEnd(r.warranty_end ?? '') },
-    { key: 'missing', title: T.attMissing, total: a.kpi.missing, rows: a.attention.missing, href: assetsHref(addFilter(sp, { state: 'MISSING' })), meta: (r) => r.department_name },
+    { key: 'overdue', title: T.attOverdue, total: a.overdue, rows: a.attention.overdue, href: assetsHref(eff, { overdue: 'true' }), meta: (r) => `${r.holder_name ?? ''} · ${T.attDue(r.due_date ?? '')}` },
+    { key: 'warranty', title: T.attWarranty, total: a.warrantySoon, rows: a.attention.warranty, href: assetsHref(addFilter(eff, { warrantyFrom: today, warrantyTo: soonTo, active: 'true' })), meta: (r) => T.attWarrantyEnd(r.warranty_end ?? '') },
+    { key: 'missing', title: T.attMissing, total: a.kpi.missing, rows: a.attention.missing, href: assetsHref(addFilter(eff, { state: 'MISSING' })), meta: (r) => r.department_name },
   ];
   return (
     <ChartPanel title={T.attentionTitle} testId="dash-attention">

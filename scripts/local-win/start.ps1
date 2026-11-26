@@ -5,6 +5,8 @@ $built = Test-Path (Join-Path $RepoDir '.next\BUILD_ID')
 if (-not $built -and (Test-RepoOnNtfs)) { throw 'The app is not built yet. Run setup.cmd first.' }
 if (-not (Test-Path (Join-Path $RepoDir '.env.local'))) { throw 'Settings are missing. Run setup.cmd first.' }
 if (Test-PortBusy $AppPort) { throw "Port $AppPort is already in use. Is the app already running in another window?" }
+# If the database is already running (for example under service-manager, shared with other apps), leave it running when this window closes.
+$pgWasRunning = Test-PgRunning
 Start-Pg
 try {
   Set-Location $RepoDir
@@ -17,5 +19,5 @@ try {
     & (Join-Path $NodeDir 'node.exe') 'node_modules/next/dist/bin/next' 'dev' '--webpack' '-H' '127.0.0.1' '-p' "$AppPort"
   }
 } finally {
-  Stop-Pg
+  if (-not $pgWasRunning) { Stop-Pg }
 }

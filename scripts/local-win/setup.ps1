@@ -78,6 +78,8 @@ if (Test-Path (Join-Path $PgData 'PG_VERSION')) {
     '', '# stockmgmt local setup', "port = $PgPort", "listen_addresses = '127.0.0.1'", "timezone = 'UTC'")
 }
 
+# The database may already be running for other apps (service-manager shares it). Stop it at the end only if this script started it.
+$pgWasRunning = Test-PgRunning
 Start-Pg
 try {
   $env:PGPASSWORD = Read-Secret 'db-owner'
@@ -123,7 +125,7 @@ try {
   }
 } finally {
   $env:PGPASSWORD = $null
-  Stop-Pg
+  if (-not $pgWasRunning) { Stop-Pg }
 }
 
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

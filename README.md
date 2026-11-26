@@ -51,6 +51,10 @@ npm run dev        # http://localhost:3210/login  → 기업코드: OPERATOR
 | `start.cmd` | DB 와 앱을 띄운다(`http://localhost:3210/login`). 창을 닫으면 둘 다 멈춘다 |
 | `load-import.cmd` | `..\stockmgmt_import\load.json` 에 적힌 기업을 만들고(없을 때만) 사용자 지정 필드를 만든 뒤 직원·자산·주변기기 엑셀을 차례로 올린다. 앱의 API 로 로그인해서 하므로 권한 검사와 이력이 그대로 적용된다. 만든 계정의 비밀번호는 화면에 보이지 않고 `..\stockmgmt_data\secrets\accounts.txt` 에 적힌다. 다시 실행하면 끝난 단계는 건너뛴다 |
 
+- `load.json` 은 기업마다 `{"code":"DEMO","name":"데모상사","dir":"demo","extra":["4_인프라_확장.xlsx"]}` 형식이다. `dir` 폴더의 `fields.json`(있으면, `[{"key","label","dataType"}]`)으로 사용자 지정 필드를 만들고 `1_직원.xlsx`·`2_자산.xlsx`·`3_주변기기.xlsx`(있는 것만)를 올린다.
+  `extra`(선택)에 적은 파일은 그다음에 적힌 순서대로 통합 파일 업로드(`/api/import/workbook`, 직원·자산·주변기기 시트를 한 트랜잭션으로)로 미리보기 → 반영한다.
+  `extra` 에는 그 폴더 안의 `.xlsx` 파일 이름만 적는다(폴더 구분자 `/` `\`, `..`, 드라이브 문자는 안 된다. 잘못 적으면 아무것도 보내기 전에 멈춘다).
+  올린 파일은 `loader-state.json` 의 `companies[코드].done` 에 `workbook:<파일 이름>` 으로 기록되어 다음 실행에서 건너뛴다. 같은 이름의 파일 내용을 바꿔도 다시 올리지 않으므로 새 자료는 새 파일 이름으로 추가한다.
 - DB 파일·로그·자동 생성된 DB 비밀번호는 `..\stockmgmt_data\` 에 있다. 이 폴더를 지우면 데이터가 사라진다.
 - DB 는 5433, 앱은 3210 포트를 쓰고 둘 다 이 PC(127.0.0.1)에서만 접속된다.
 - 저장소가 NTFS 가 아닌 드라이브(exFAT 등)에 있으면 운영용 빌드를 만들 수 없어 개발 모드로 실행된다(시험용). PostgreSQL 도 NTFS 만 지원하므로 실제로 쓸 때는 NTFS 드라이브로 옮긴다.

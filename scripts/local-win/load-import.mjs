@@ -2,7 +2,10 @@
 // (the same login, permission checks and import code a person would use in the browser).
 //
 // For each company in <import dir>/load.json:
-//   create the company and its admin (if missing) -> create custom fields from fields.json -> upload 1_직원, 2_자산, 3_주변기기.
+//   create the company and its admin (if missing) -> create custom fields from fields.json -> upload 1_직원, 2_자산, 3_주변기기
+//   -> upload each file in the entry's optional "extra" list (combined workbooks: sheets 직원/자산/주변기기, POST /api/import/workbook).
+//   load.json entry: {"code":"DEMO","name":"데모상사","dir":"demo","extra":["4_인프라_확장.xlsx"]}. Extra files are plain file names
+//   inside the company dir; finished ones are remembered as "workbook:<file name>".
 // Passwords are generated here and written to <secrets dir>/accounts.txt. They are never printed.
 // Safe to run again: finished steps are remembered in <secrets dir>/loader-state.json and skipped.
 import { spawnSync } from 'node:child_process';
@@ -96,9 +99,44 @@ async function systemSession() {
   throw new Error('Could not create a system administrator.');
 }
 
+/** load.json "extra": plain .xlsx file names inside the company dir (no folders, no "..", no drive letters). */
+function extraFiles(entry) {
+  if (entry.extra === undefined) return [];
+  if (!Array.isArray(entry.extra)) throw new Error(`load.json: "extra" of ${entry.code} must be a list of file names.`);
+  const seen = new Set();
+  for (const f of entry.extra) {
+    const ok = typeof f === 'string' && f.length > 0 && f.length <= 200 && f === f.trim() && !/[\\/:\u0000-\u001f]/.test(f) &&
+      f !== '.' && f !== '..' && !f.includes('..') && /\.xlsx$/i.test(f);
+    if (!ok) throw new Error(`load.json: "extra" of ${entry.code} has an invalid entry ${JSON.stringify(String(f).slice(0, 80))}. Use plain .xlsx file names inside "${entry.dir}" (no folders, no "..").`);
+    if (seen.has(f.toLowerCase())) throw new Error(`load.json: "extra" of ${entry.code} lists ${JSON.stringify(f)} twice.`);
+    seen.add(f.toLowerCase());
+  }
+  return entry.extra;
+}
+
+/** Preview then commit one upload. Prints the errors and returns false if it could not be loaded. */
+async function upload(s, url, file, bytes) {
+  for (const mode of ['preview', 'commit']) {
+    const r = await s.call('POST', `${url}?mode=${mode}`, undefined, bytes);
+    const errors = r.data?.errors ?? [];
+    if (errors.length || (r.status !== 200) || (mode === 'commit' && !r.data?.committed)) {
+      console.log(`  ${file}: NOT loaded (${mode}, HTTP ${r.status}). ${errors.length} error(s):`);
+      for (const e of errors.slice(0, 30)) console.log(`     ${e.sheet ? `${e.sheet} sheet ` : ''}row ${e.row}: ${e.message}`);
+      if (!errors.length) console.log(`     ${JSON.stringify(r.data?.error ?? r.data)}`);
+      return false;
+    }
+    if (mode === 'commit') {
+      const sheets = (r.data.sheets ?? []).filter((x) => !x.skipped).map((x) => `${x.sheet} ${x.totalRows}`);
+      console.log(`  ${file}: ${r.data.totalRows} rows loaded${sheets.length ? ` (${sheets.join(', ')})` : ''}.`);
+    }
+  }
+  return true;
+}
+
 async function loadCompany(sys, entry) {
   const dir = path.join(IMPORT_DIR, entry.dir);
   const code = entry.code.toUpperCase();
+  const extra = extraFiles(entry); // checked before anything is sent for this company
   console.log(`\n== ${code} (${entry.name})`);
   let c = state.companies[code];
   const s = new Session();
@@ -133,19 +171,17 @@ async function loadCompany(sys, entry) {
     const full = path.join(dir, file);
     if (c.done.includes(kind)) { console.log(`  ${file}: already loaded, skipped.`); continue; }
     if (!existsSync(full)) { console.log(`  ${file}: not found, skipped.`); continue; }
-    const bytes = readFileSync(full);
-    for (const mode of ['preview', 'commit']) {
-      const r = await s.call('POST', `/api/import/${kind}?mode=${mode}`, undefined, bytes);
-      const errors = r.data?.errors ?? [];
-      if (errors.length || (r.status !== 200) || (mode === 'commit' && !r.data?.committed)) {
-        console.log(`  ${file}: NOT loaded (${mode}, HTTP ${r.status}). ${errors.length} error(s):`);
-        for (const e of errors.slice(0, 30)) console.log(`     row ${e.row}: ${e.message}`);
-        if (!errors.length) console.log(`     ${JSON.stringify(r.data?.error ?? r.data)}`);
-        return false;
-      }
-      if (mode === 'commit') console.log(`  ${file}: ${r.data.totalRows} rows loaded.`);
-    }
+    if (!(await upload(s, `/api/import/${kind}`, file, readFileSync(full)))) return false;
     c.done.push(kind); save();
+  }
+
+  for (const file of extra) {
+    const step = `workbook:${file}`;
+    const full = path.join(dir, file);
+    if (c.done.includes(step)) { console.log(`  ${file}: already loaded, skipped.`); continue; }
+    if (!existsSync(full)) { console.log(`  ${file}: not found, skipped.`); continue; }
+    if (!(await upload(s, '/api/import/workbook', file, readFileSync(full)))) return false;
+    c.done.push(step); save();
   }
   return true;
 }
@@ -159,6 +195,7 @@ if (!(await probe.text()).includes('StockMgmt') || me?.status !== 401 || !meBody
   throw new Error(`Something else is answering at ${BASE}; it is not StockMgmt. Nothing was sent. Close the other program or start this app with start.cmd.`);
 }
 const manifest = JSON.parse(readFileSync(path.join(IMPORT_DIR, 'load.json'), 'utf8'));
+for (const entry of manifest) extraFiles(entry); // a bad "extra" entry stops the run before anything is sent
 console.log('== system administrator');
 const sys = await systemSession();
 let ok = true;

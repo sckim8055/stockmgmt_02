@@ -190,6 +190,137 @@ def test_dashboard(browser):
     ctx.close()
 
 
+# ───────────────────────── dashboard v2: drill-down, chips, view list, reload, clear ─────────────────────────
+def digits(text):
+    m = re.search(r'\d[\d,]*', text)
+    return int(m.group(0).replace(',', '')) if m else None
+
+
+def big(pg):
+    return digits(pg.inner_text('[data-testid=dash-assets] [data-testid=big-value]'))
+
+
+def dash_settle(pg):
+    pg.wait_for_load_state('networkidle')
+    # (wait_for_function would need 'unsafe-eval', which the CSP forbids) — poll from Python instead
+    for _ in range(100):
+        if pg.locator('.dash-body.is-busy').count() == 0 and pg.locator('[data-testid=dash-assets]').count() == 1:
+            break
+        pg.wait_for_timeout(100)
+    pg.wait_for_timeout(250)
+
+
+def chip_texts(pg):
+    return [' '.join(t.split()) for t in pg.locator('[data-testid=filter-chips] .filter-chip').all_inner_texts()]
+
+
+def test_dashboard_drill(browser):
+    ctx, pg = new_page(browser)
+    login(pg, 'SMOKEA', 'admin')
+    pg.wait_for_selector('[data-testid=dash-assets]')
+    dash_settle(pg)
+    check('drill: starts with 4 assets, no chips', big(pg) == 4 and chip_texts(pg) == [], (big(pg), chip_texts(pg)))
+    for tid in ['dash-status', 'dash-breakdown', 'dash-age', 'dash-warranty', 'dash-trend', 'dash-periph', 'dash-attention']:
+        check(f'drill: panel {tid} shown', pg.locator(f'[data-testid={tid}]').count() == 1)
+
+    # donut slice by keyboard (focus + Enter): 재고 · 사용 가능
+    slice_ = pg.locator('[data-testid=dash-status] [data-key="IN_STOCK:AVAILABLE"]')
+    check('drill: donut slice is a focusable button with a summary label', slice_.get_attribute('role') == 'button' and slice_.get_attribute('tabindex') == '0' and '2' in (slice_.get_attribute('aria-label') or ''))
+    slice_.focus()
+    pg.keyboard.press('Enter')
+    pg.wait_for_url(re.compile(r'state=IN_STOCK'))
+    dash_settle(pg)
+    check('drill: slice → state chip, KPI total 2', chip_texts(pg) == ['상태: 재고 · 사용 가능 ×'] and big(pg) == 2, (chip_texts(pg), big(pg)))
+    check('drill: slice pressed', pg.locator('[data-testid=dash-status] [data-key="IN_STOCK:AVAILABLE"]').get_attribute('aria-pressed') == 'true')
+
+    # bar click (mouse): Laptop
+    pg.locator('[data-testid=dash-categories] button').first.click()
+    pg.wait_for_url(re.compile(r'categoryId='))
+    dash_settle(pg)
+    check('drill: bar → breadcrumb chips (state › category)', chip_texts(pg) == ['상태: 재고 · 사용 가능 ×', '카테고리: Laptop ×'], chip_texts(pg))
+    check('drill: panels follow the filters (attention overdue list empty, total 2)', big(pg) == 2 and pg.inner_text('[data-testid=attention-overdue]').count('SM-') == 0, big(pg))
+
+    # exact dimension: manufacturer = Lenovo
+    pg.select_option('[data-testid=breakdown-dimension]', 'manufacturer')
+    pg.wait_for_url(re.compile(r'dimension=manufacturer'))
+    dash_settle(pg)
+    pg.locator('[data-testid=dash-breakdown-list] button', has_text='Lenovo').click()
+    pg.wait_for_url(re.compile(r'eq_manufacturer=Lenovo'))
+    dash_settle(pg)
+    shown = big(pg)
+    check('drill: manufacturer chip added', '제조사: Lenovo ×' in chip_texts(pg) and shown == 2, (chip_texts(pg), shown))
+
+    # reload keeps filters
+    url = pg.url
+    pg.reload()
+    pg.wait_for_selector('[data-testid=dash-assets]')
+    dash_settle(pg)
+    check('drill: reload keeps URL, chips and numbers', pg.url == url and len(chip_texts(pg)) == 3 and big(pg) == shown, (pg.url, chip_texts(pg), big(pg)))
+
+    # View list: same filters on the assets list, total equals the dashboard number
+    href = pg.get_attribute('[data-testid=dash-view-list]', 'href')
+    check('drill: view list carries the same params', href.startswith('/assets?') and 'eq_manufacturer=Lenovo' in href and 'state=IN_STOCK' in href and 'substate=AVAILABLE' in href and 'categoryId=' in href and 'dimension' not in href, href)
+    pg.click('[data-testid=dash-view-list]')
+    pg.wait_for_url(re.compile(r'/assets\?'))
+    pg.wait_for_selector('[data-testid=assets-table]')
+    pg.wait_for_load_state('networkidle')
+    pg.wait_for_timeout(300)
+    check('drill: list total == dashboard number', digits(pg.inner_text('[data-testid=list-total]')) == shown and len(tags_shown(pg)) == shown, (pg.inner_text('[data-testid=list-total]'), shown))
+    check('drill: list shows the exact-match condition as a chip', '제조사: Lenovo' in pg.inner_text('[data-testid=exact-chips]'))
+    pg.go_back()
+    pg.wait_for_selector('[data-testid=dash-assets]')
+    dash_settle(pg)
+
+    # clear all
+    pg.click('[data-testid=filters-clear]')
+    pg.wait_for_url(lambda u: 'state=' not in u)
+    dash_settle(pg)
+    check('drill: clear all → no chips, 4 assets, view settings kept', chip_texts(pg) == [] and big(pg) == 4 and 'dimension=manufacturer' in pg.url, (chip_texts(pg), big(pg), pg.url))
+
+    # warranty bucket (≤30 days) → exact list
+    pg.locator('[data-testid=warranty-chart] g[role=button]').first.focus()
+    pg.keyboard.press('Enter')
+    pg.wait_for_url(re.compile(r'warrantyFrom='))
+    dash_settle(pg)
+    n = big(pg)
+    href = pg.get_attribute('[data-testid=dash-view-list]', 'href')
+    pg.goto(href)
+    pg.wait_for_selector('[data-testid=assets-table]')
+    pg.wait_for_load_state('networkidle')
+    pg.wait_for_timeout(300)
+    check('drill: warranty ≤30d bucket → list total equals (SM-004 only)', n == 1 and digits(pg.inner_text('[data-testid=list-total]')) == 1 and tags_shown(pg) == ['SM-004'], (n, tags_shown(pg)))
+
+    # trend: clicking the current month opens the stock history for that month
+    pg.goto('/')
+    pg.wait_for_selector('[data-testid=dash-trend]')
+    dash_settle(pg)
+    cols = pg.locator('[data-testid=trend-chart] g[role=button]')
+    check('drill: trend has 12 month columns', cols.count() == 12, cols.count())
+    cols.last.focus()
+    pg.keyboard.press('Enter')
+    pg.wait_for_url(re.compile(r'/history/stock\?'))
+    month = datetime.date.today().strftime('%Y-%m')
+    check('drill: month → stock history with kind/from/to', 'kind=ASSET' in pg.url and f'from={month}-01' in pg.url, pg.url)
+
+    # table alternative
+    pg.goto('/')
+    pg.wait_for_selector('[data-testid=dash-status]')
+    dash_settle(pg)
+    pg.locator('[data-testid=dash-status] button', has_text='표로 보기').click()
+    check('drill: donut table alternative', pg.locator('[data-testid=dash-status] table tbody tr').count() == 8)
+    ctx.close()
+
+    # scoped user: department breakdown shows only HR
+    ctx, pg = new_page(browser)
+    login(pg, 'SMOKEA', 'hrmanager')
+    pg.goto('/?dimension=department')
+    pg.wait_for_selector('[data-testid=dash-breakdown]')
+    dash_settle(pg)
+    labels = [t.split('\n')[0].strip() for t in pg.locator('[data-testid=dash-breakdown-list] li').all_inner_texts()]
+    check('drill/scoped: department breakdown = HR only', labels == ['HR'], labels)
+    ctx.close()
+
+
 # ───────────────────────── assets list: toolbar, status chips, sorting, column filters, reset ─────────────────────────
 def tags_shown(pg):
     return [t.strip() for t in pg.locator('[data-testid=assets-table] tbody tr td:first-child').all_inner_texts()]
@@ -818,6 +949,7 @@ def main():
         print('seeded business data', flush=True)
         browser = p.chromium.launch(executable_path=os.environ.get('E2E_CHROME', '/usr/bin/google-chrome'), args=['--no-sandbox'])
         test_dashboard(browser)
+        test_dashboard_drill(browser)
         test_assets_toolbar(browser)
         test_stock_history(browser, ids)
         test_audit(browser)

@@ -460,14 +460,15 @@ export function ListPager({ page, total, pageSize, onPage }: { page: number; tot
 }
 
 /** 주소의 조건을 API 주소로 옮긴다. 허용한 키와 열 필터(f_)만 넘긴다. */
-export function apiQuery(spKey: string, keys: readonly string[], pageSize: number): string {
+/** prefixes: 그대로 옮길 매개변수 이름의 앞붙이(기본은 열 필터 f_ 만. 자산 목록은 정확히 같은 값 조건 eq_ 도 옮긴다). */
+export function apiQuery(spKey: string, keys: readonly string[], pageSize: number, prefixes: readonly string[] = [FILTER_PARAM]): string {
   const from = new URLSearchParams(spKey);
   const params = new URLSearchParams({ pageSize: String(pageSize) });
   for (const k of keys) {
     const v = from.get(k);
     if (v) params.set(k, v);
   }
-  for (const [k, v] of from) if (k.startsWith(FILTER_PARAM) && v) params.set(k, v);
+  for (const [k, v] of from) if (v && prefixes.some((p) => k.startsWith(p))) params.set(k, v);
   return params.toString();
 }
 

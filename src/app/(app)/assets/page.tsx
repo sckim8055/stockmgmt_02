@@ -11,13 +11,19 @@ import { SORT_KEYS, type AssetPage, type AssetRow, type CategoryOption, type Dep
 import { apiQuery, FILTER_PARAM, ListPager, ListTable, parsePageSize, SearchToolbar, useListUrl, type Column, type FieldOption } from '../list-tools';
 import { useT } from '../../i18n';
 import { TEXT } from './page.text';
+import { TEXT as DASH_TEXT } from '../page.text';
 import { useFmt } from '../../i18n/format';
 
 /**
  * 주소에서 읽어 API 로 그대로 넘기는 조건. holderName 은 화면 표시용이라 넘기지 않는다.
  * 열 필터(f_<열>)는 apiQuery 가 따로 옮긴다.
  */
-const API_KEYS = ['q', 'qField', 'state', 'substate', 'categoryId', 'modelId', 'departmentId', 'holderPersonId', 'includeVoid', 'overdue', 'sort', 'order', 'page'] as const;
+const API_KEYS = [
+  'q', 'qField', 'state', 'substate', 'categoryId', 'modelId', 'departmentId', 'holderPersonId', 'includeVoid', 'overdue', 'sort', 'order', 'page',
+  // 대시보드의 "목록 보기"가 옮겨 오는 정확히 같은 값 조건(eq_* 는 apiQuery 가 앞붙이로 옮긴다)
+  'active', 'hasHolder', 'purchaseFrom', 'purchaseTo', 'noPurchaseDate', 'warrantyFrom', 'warrantyTo', 'noWarrantyEnd', 'blank',
+] as const;
+const EXACT_PREFIX = 'eq_';
 
 /** 상태 칩의 순서. 등록 취소(VOID)는 "등록 취소 포함"을 켰을 때만 보인다. */
 const CHIP_STATES: AssetState[] = ['IN_STOCK', 'IN_USE', 'MAINTENANCE', 'MISSING', 'ON_ORDER', 'RETIRED', 'VOID'];
@@ -59,7 +65,7 @@ function AssetsInner() {
   useEffect(() => {
     let live = true;
     void (async () => {
-      const r = await api<AssetPage>('GET', `/api/assets?${apiQuery(spKey, API_KEYS, pageSize)}`);
+      const r = await api<AssetPage>('GET', `/api/assets?${apiQuery(spKey, API_KEYS, pageSize, [FILTER_PARAM, EXACT_PREFIX])}`);
       if (!live) return;
       if (r.ok) {
         setData(r.data);
@@ -234,6 +240,8 @@ function AssetsInner() {
         </label>
       </div>
 
+      <ExactChips spKey={spKey} setParams={setParams} fields={fields} />
+
       {summary ? (
         <ul className="chip-row" aria-label={T.chipsLabel} data-testid="status-chips">
           {chip('all', T.all, summary.total, !get('state'), () => setParams({ state: null, substate: null }))}
@@ -291,6 +299,49 @@ function AssetsInner() {
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * 대시보드에서 들어온 "정확히 같은 값" 조건(목록의 다른 칸으로는 보이지 않는 것)을 칩으로 보여 주고 하나씩 지우게 한다.
+ * 이 조건이 걸려 있는데 보이지 않으면 목록이 왜 줄었는지 알 수 없기 때문이다.
+ */
+function ExactChips({ spKey, setParams, fields }: { spKey: string; setParams: (p: Record<string, string | null>) => void; fields: AssetPage['fields'] | undefined }) {
+  const D = useT(DASH_TEXT);
+  const sp = new URLSearchParams(spKey);
+  const label = (key: string) => fields?.custom.find((c) => c.key === key)?.label ?? key;
+  const chips: { id: string; text: string; patch: Record<string, string | null> }[] = [];
+  const range = (a: string | null, b: string | null) => `${a ?? ''} ~ ${b ?? ''}`;
+  for (const [k, v] of sp) {
+    if (!v || !k.startsWith(EXACT_PREFIX)) continue;
+    const name = k === 'eq_manufacturer' ? D.chip.eq_manufacturer : k === 'eq_location' ? D.chip.eq_location : label(k.slice('eq_cf.'.length));
+    chips.push({ id: k, text: `${name}: ${v}`, patch: { [k]: null } });
+  }
+  const blanks = (sp.get('blank') ?? '').split(',').filter(Boolean);
+  for (const b of blanks) {
+    const rest = blanks.filter((x) => x !== b).join(',');
+    chips.push({ id: `blank-${b}`, text: `${b === 'location' ? D.chip.eq_location : label(b.slice(3))}: ${D.chipBlank}`, patch: { blank: rest || null } });
+  }
+  if (sp.get('hasHolder')) chips.push({ id: 'hasHolder', text: `${D.chip.hasHolder}: ${sp.get('hasHolder') === 'true' ? D.chipYes : D.chipNo}`, patch: { hasHolder: null } });
+  if (sp.get('purchaseFrom') || sp.get('purchaseTo')) chips.push({ id: 'purchase', text: `${D.chip.purchase}: ${range(sp.get('purchaseFrom'), sp.get('purchaseTo'))}`, patch: { purchaseFrom: null, purchaseTo: null } });
+  if (sp.get('noPurchaseDate')) chips.push({ id: 'noPurchaseDate', text: `${D.chip.purchase}: ${D.chipNone}`, patch: { noPurchaseDate: null } });
+  if (sp.get('warrantyFrom') || sp.get('warrantyTo')) chips.push({ id: 'warranty', text: `${D.chip.warranty}: ${range(sp.get('warrantyFrom'), sp.get('warrantyTo'))}`, patch: { warrantyFrom: null, warrantyTo: null } });
+  if (sp.get('noWarrantyEnd')) chips.push({ id: 'noWarrantyEnd', text: `${D.chip.warranty}: ${D.chipNone}`, patch: { noWarrantyEnd: null } });
+  if (sp.get('active')) chips.push({ id: 'active', text: D.chipActive, patch: { active: null } });
+  if (!chips.length) return null;
+  return (
+    <div className="dash-chips-row" style={{ marginTop: 0, marginBottom: 10 }}>
+      <span className="dash-chips-row__label">{D.activeFilters}</span>
+      <ul className="dash-chips" data-testid="exact-chips">
+        {chips.map((c) => (
+          <li key={c.id}>
+            <button type="button" className="filter-chip" onClick={() => setParams(c.patch)} aria-label={D.removeChip(c.text)}>
+              {c.text} <span aria-hidden="true" className="filter-chip__x">×</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

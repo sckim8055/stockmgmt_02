@@ -22,7 +22,7 @@ const RESOURCE = 'threshold';
 const conflict = (code: string, message: string) => new HttpError(409, code, message);
 
 // 한계 수량 t 의 현재 사용 가능 수량.
-const SQL_THRESHOLD_QTY =
+export const SQL_THRESHOLD_QTY =
   '(SELECT count(*)::int FROM app.asset a JOIN app.item_model m ON m.id = a.model_id AND m.company_id = a.company_id' +
   "   WHERE a.company_id = t.company_id AND a.state = 'IN_STOCK' AND a.substate = 'AVAILABLE'" +
   '     AND (a.model_id = t.model_id OR m.category_id = t.category_id)' +
@@ -32,9 +32,9 @@ const SQL_THRESHOLD_QTY =
   '     AND (s.model_id = t.model_id OR m.category_id = t.category_id)' +
   '     AND (t.department_id IS NULL OR s.department_id = t.department_id))';
 
-const SQL_THRESHOLD_TARGET =
+export const SQL_THRESHOLD_TARGET =
   ' coalesce(c.name, m.manufacturer || chr(32) || m.name) AS target_name, coalesce(c.kind, m.kind) AS kind, d.name AS department_name';
-const SQL_THRESHOLD_JOINS =
+export const SQL_THRESHOLD_JOINS =
   ' LEFT JOIN app.category c ON c.id = t.category_id AND c.company_id = t.company_id' +
   ' LEFT JOIN app.item_model m ON m.id = t.model_id AND m.company_id = t.company_id' +
   ' LEFT JOIN app.department d ON d.id = t.department_id AND d.company_id = t.company_id';

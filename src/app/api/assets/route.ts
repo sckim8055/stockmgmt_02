@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { isoDate, line, str } from '@/lib/validation';
 import { ASSET_SORT_KEYS, createAsset, listAssets } from '@/lib/assets/assets';
+import { isExactKey, parseExactParams } from '@/lib/assets/exact-params';
 import { loadDataAccess } from '@/lib/authz/scope';
 import { badRequest, json } from '@/lib/http/errors';
 import { route } from '@/lib/http/route';
@@ -19,6 +20,8 @@ const Query = z.object({
   qField: line().max(64).optional(),
   includeVoid: z.enum(['true', 'false']).optional(),
   overdue: z.enum(['true', 'false']).optional(),
+  // 퇴역 자산을 뺀다(운영 중인 자산만). 대시보드의 보증 만료 구간에서 들어올 때 쓴다.
+  active: z.enum(['true', 'false']).optional(),
   sort: z.enum(ASSET_SORT_KEYS).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
@@ -31,6 +34,9 @@ const Query = z.object({
  *   <열> = asset_tag | category | manufacturer | model | serial | holder | employee_no | department | location
  *        | supplier | purchase_price | purchase_date | warranty_end | cf.<사용자 지정 필드 키>
  * 값은 앞뒤 공백을 자르고 100자까지, 제어 문자는 받지 않는다. 모르는 열은 400, 읽을 권한이 없는 열은 403(listAssets).
+ *
+ * 정확히 같은 값 조건(eq_manufacturer, eq_location, eq_cf.<키>, blank, hasHolder, purchaseFrom/To, noPurchaseDate,
+ * warrantyFrom/To, noWarrantyEnd)은 parseExactParams 가 읽는다. 대시보드에서 "목록 보기"로 들어올 때 쓴다.
  */
 const FILTER_PREFIX = 'f_';
 const MAX_FILTERS = 40;
@@ -42,6 +48,7 @@ function parseQuery(params: URLSearchParams): Parameters<typeof listAssets>[3] {
   const filters: Record<string, string> = {};
   let n = 0;
   for (const [key, value] of params) {
+    if (isExactKey(key)) continue;
     if (!key.startsWith(FILTER_PREFIX)) {
       plain[key] = value;
       continue;
@@ -55,8 +62,8 @@ function parseQuery(params: URLSearchParams): Parameters<typeof listAssets>[3] {
   }
   const parsed = Query.safeParse(plain);
   if (!parsed.success) throw badRequest('조회 조건이 올바르지 않습니다.');
-  const { includeVoid, overdue, ...rest } = parsed.data;
-  return { ...rest, filters, includeVoid: includeVoid === 'true', overdue: overdue === 'true' };
+  const { includeVoid, overdue, active, ...rest } = parsed.data;
+  return { ...rest, filters, exact: parseExactParams(params), includeVoid: includeVoid === 'true', overdue: overdue === 'true', active: active === 'true' };
 }
 
 const Body = z.object({

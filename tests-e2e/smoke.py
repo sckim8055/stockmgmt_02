@@ -377,6 +377,9 @@ def test_dashboard_toggles(browser):
     check('toggles: both on by default, URL has no flag', retired_box.is_checked() and imports_box.is_checked() and 'retired=' not in pg.url and 'imports=' not in pg.url, pg.url)
     check('toggles: the page asks the API with active=true&excludeImports=true', bool(api_calls) and 'active=true' in api_calls[-1] and 'excludeImports=true' in api_calls[-1], api_calls[-1:])
     check('toggles: total excludes retired (2) and its label says so', big(pg) == 2 and '퇴역 제외' in pg.inner_text('[data-testid=total-label]'), (big(pg), pg.inner_text('[data-testid=total-label]')))
+    # only one state has assets here, so the donut is a single full ring: it must be drawn in that state's colour, not the background
+    ring = pg.evaluate("() => { const c = document.querySelector('circle.donut__slice'); if (!c) return null; const bg = getComputedStyle(document.body).getPropertyValue('--surface-solid').trim(); return { stroke: getComputedStyle(c).stroke, bg }; }")
+    check('toggles: single-slice donut ring is visible (not the background colour)', ring is not None and ring['stroke'] not in ('none', '') and 'rgb(' in ring['stroke'] and ring['stroke'].replace(' ', '') != 'rgb(%d,%d,%d)' % tuple(int(ring['bg'].lstrip('#')[i:i + 2], 16) for i in (0, 2, 4)), ring)
     tile = pg.locator('[data-testid=kpi-RETIRED]')
     check('toggles: retired KPI tile shows 제외됨 (not 0) and is not a button', '제외됨' in tile.inner_text() and tile.evaluate('e => e.tagName') != 'BUTTON', tile.inner_text())
     legend = pg.locator('[data-testid=dash-status] .donut__legend li[data-legend-key=RETIRED]')

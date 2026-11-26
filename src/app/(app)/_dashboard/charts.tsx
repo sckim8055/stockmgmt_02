@@ -205,9 +205,10 @@ export function Donut({ label, slices, centerLabel, centerValue }: { label: stri
               ...pressable(s.onSelect),
               ...tip.bind(lines),
             };
-            // 한 조각이 전부면 고리 하나(호 경로는 시작과 끝이 같으면 그려지지 않는다)
+            // 한 조각이 전부면 고리 하나(호 경로는 시작과 끝이 같으면 그려지지 않는다).
+            // 색은 style 로 준다: .donut__slice 의 CSS stroke(조각 사이 테두리색)가 stroke 속성보다 우선해서 고리가 배경색으로 칠해졌다.
             return shown.length === 1 ? (
-              <circle key={s.key} {...common} cx={SIZE / 2} cy={SIZE / 2} r={(R_OUT + R_IN) / 2} fill="none" stroke={s.color} strokeWidth={R_OUT - R_IN} />
+              <circle key={s.key} {...common} cx={SIZE / 2} cy={SIZE / 2} r={(R_OUT + R_IN) / 2} fill="none" strokeWidth={R_OUT - R_IN} style={{ stroke: s.color }} />
             ) : (
               <path key={s.key} {...common} d={arc(a0, a1)} />
             );

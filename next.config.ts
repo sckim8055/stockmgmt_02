@@ -21,6 +21,8 @@ const CSP = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // 개발 모드(F: 가 exFAT 라 PC 에서는 개발 모드로 돈다)에서 화면 구석에 뜨는 Next 표시가 메뉴를 가리므로 끈다.
+  devIndicators: false,
   serverExternalPackages: ['pg', '@node-rs/argon2'],
   async headers() {
     return [

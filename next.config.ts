@@ -23,6 +23,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // 개발 모드(F: 가 exFAT 라 PC 에서는 개발 모드로 돈다)에서 화면 구석에 뜨는 Next 표시가 메뉴를 가리므로 끈다.
   devIndicators: false,
+  // 개발 모드(next dev)를 Cloudflare 터널 주소로 열 때 필요. 없으면 Next 16 이 외부 주소의 개발용 요청을 막아 화면이 '불러오는 중'에서 멈춘다.
+  allowedDevOrigins: ['stck.kimbbob.xyz'],
   serverExternalPackages: ['pg', '@node-rs/argon2'],
   async headers() {
     return [

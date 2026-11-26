@@ -12,6 +12,7 @@ import { isDimensionName, loadDashboard } from '@/lib/reports/dashboard';
  *   eq_manufacturer, eq_location, eq_cf.<키>, blank, hasHolder, purchaseFrom/To, noPurchaseDate, warrantyFrom/To, noWarrantyEnd
  *   dimension   묶음 기준: category | manufacturer | model | department | location | holder | cf.<키>  (모르는 이름 400, 읽을 수 없는 제한 필드 403)
  *   trendMonths 이력 추이 기간: 3 | 6 | 12 (기본 12)
+ *   excludeImports=true 이력 추이(와 이번 달 처리 수)에서 엑셀 업로드가 남긴 이력을 뺀다(기본: 넣는다)
  * 주변기기 패널에는 departmentId 만 적용된다(자산의 카테고리·상태 등은 주변기기에 없는 속성이다).
  * 모르는 매개변수는 400.
  */
@@ -24,6 +25,7 @@ const Query = z.strictObject({
   active: z.enum(['true']).optional(),
   dimension: z.string().max(43).refine(isDimensionName).optional(),
   trendMonths: z.enum(['3', '6', '12']).optional(),
+  excludeImports: z.enum(['true']).optional(),
 });
 
 function parseQuery(params: URLSearchParams): Parameters<typeof loadDashboard>[3] {
@@ -35,8 +37,8 @@ function parseQuery(params: URLSearchParams): Parameters<typeof loadDashboard>[3
   }
   const parsed = Query.safeParse(plain);
   if (!parsed.success) throw badRequest('조회 조건이 올바르지 않습니다.');
-  const { trendMonths, active, ...rest } = parsed.data;
-  return { ...rest, active: active === 'true', exact: parseExactParams(params), trendMonths: trendMonths ? (Number(trendMonths) as 3 | 6 | 12) : undefined };
+  const { trendMonths, active, excludeImports, ...rest } = parsed.data;
+  return { ...rest, active: active === 'true', excludeImports: excludeImports === 'true', exact: parseExactParams(params), trendMonths: trendMonths ? (Number(trendMonths) as 3 | 6 | 12) : undefined };
 }
 
 export const GET = route(

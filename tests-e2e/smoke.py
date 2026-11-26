@@ -321,6 +321,124 @@ def test_dashboard_drill(browser):
     ctx.close()
 
 
+# ───────────────────────── dashboard: "퇴역 제외" / "엑셀 업로드 제외" toggles (company B: own data) ─────────────────────────
+def sqlv(q):
+    return subprocess.run(['psql', OWNER_URL, '-qAtc', q], check=True, capture_output=True, text=True).stdout.strip()
+
+
+ASSET_HEADERS = ['자산태그', '카테고리', '제조사', '모델명', '시리얼번호', '관리부서', '위치', '보유자사번', '구매일', '구매가', '공급업체', '보증만료일', '상태']
+
+
+def xlsx(rows):
+    """Minimal one-sheet .xlsx (inline strings) for the import API."""
+    import io
+    import zipfile
+    from xml.sax.saxutils import escape
+
+    body = ''.join(
+        f'<row r="{r + 1}">' + ''.join(
+            f'<c r="{chr(65 + c)}{r + 1}" t="inlineStr"><is><t>{escape(v)}</t></is></c>' for c, v in enumerate(cells) if v is not None) + '</row>'
+        for r, cells in enumerate(rows))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as z:
+        z.writestr('xl/workbook.xml', '<workbook><sheets><sheet name="s" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr('xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
+        z.writestr('xl/worksheets/sheet1.xml', f'<worksheet><sheetData>{body}</sheetData></worksheet>')
+    return buf.getvalue()
+
+
+def last_month_bar(pg):
+    label = pg.locator('[data-testid=trend-chart] g.col').last.get_attribute('aria-label') or ''
+    m = re.search(r':\s*([\d,]+)', label)
+    return int(m.group(1).replace(',', '')) if m else None
+
+
+def test_dashboard_toggles(browser):
+    ctx, pg = new_page(browser)
+    login(pg, 'SMOKEB', 'admin')
+    # data: one Excel import (1 in stock + 2 retired) and, right after it, one asset registered by hand
+    def asset(tag, status=None):
+        return [tag, '노트북', 'Lenovo', 'TG-1', None, None, None, None, None, None, None, None, status]
+    r = pg.request.post('/api/import/assets?mode=commit', data=xlsx([ASSET_HEADERS, asset('TGI-1'), asset('TGI-2', '퇴역'), asset('TGI-3', '퇴역')]),
+                        headers={'content-type': 'application/octet-stream', 'origin': BASE})
+    check('toggles/setup: import committed', r.ok and r.json().get('committed') is True, r.text()[:300])
+    model = sqlv(f"SELECT id FROM app.item_model WHERE company_id = '{S['B']}' AND name = 'TG-1'")
+    r = pg.request.post('/api/assets', data={'modelId': model, 'assetTag': 'TGM-1'}, headers={'origin': BASE})
+    check('toggles/setup: manual asset registered', r.status == 201, r.text()[:300])
+    all_txns = int(sqlv(f"SELECT count(*) FROM app.asset_txn WHERE company_id = '{S['B']}'"))
+    api_calls = []
+    pg.on('request', lambda req: api_calls.append(req.url) if '/api/dashboard' in req.url else None)
+
+    pg.goto('/')
+    pg.wait_for_selector('[data-testid=dash-trend]')
+    dash_settle(pg)
+    retired_box = pg.locator('[data-testid=toggle-exclude-retired]')
+    imports_box = pg.locator('[data-testid=toggle-exclude-imports]')
+    check('toggles: both on by default, URL has no flag', retired_box.is_checked() and imports_box.is_checked() and 'retired=' not in pg.url and 'imports=' not in pg.url, pg.url)
+    check('toggles: the page asks the API with active=true&excludeImports=true', bool(api_calls) and 'active=true' in api_calls[-1] and 'excludeImports=true' in api_calls[-1], api_calls[-1:])
+    check('toggles: total excludes retired (2) and its label says so', big(pg) == 2 and '퇴역 제외' in pg.inner_text('[data-testid=total-label]'), (big(pg), pg.inner_text('[data-testid=total-label]')))
+    tile = pg.locator('[data-testid=kpi-RETIRED]')
+    check('toggles: retired KPI tile shows 제외됨 (not 0) and is not a button', '제외됨' in tile.inner_text() and tile.evaluate('e => e.tagName') != 'BUTTON', tile.inner_text())
+    legend = pg.locator('[data-testid=dash-status] .donut__legend li[data-legend-key=RETIRED]')
+    check('toggles: donut legend shows 퇴역 제외됨, no retired slice', '제외됨' in legend.inner_text() and pg.locator('[data-testid=dash-status] svg [data-key=RETIRED]').count() == 0, legend.inner_text())
+    href = pg.get_attribute('[data-testid=dash-view-list]', 'href')
+    panel_href = pg.locator('[data-testid=dash-status] a.dash-link-btn').get_attribute('href')
+    check('toggles: view list links carry active=true', 'active=true' in href and 'active=true' in panel_href and 'retired' not in href and 'imports' not in href, (href, panel_href))
+    check('toggles: trend month bar counts only the manual registration (1), KPI agrees',
+          last_month_bar(pg) == 1 and pg.inner_text('[data-testid=kpi-activity]') == '1', (last_month_bar(pg), pg.inner_text('[data-testid=kpi-activity]')))
+    check('toggles: trend hint says the history screen does not apply the import filter', '이력 화면에는 적용되지 않습니다' in pg.inner_text('[data-testid=dash-trend] .dash-panel__hint'))
+    for vw, vh in [(1280, 900), (390, 844)]:
+        pg.set_viewport_size({'width': vw, 'height': vh})
+        pg.wait_for_timeout(400)
+        pg.screenshot(path=os.path.join(os.environ.get('E2E_OUT', '.'), f'dashboard-toggles-{vw}.png'), full_page=True)
+    pg.set_viewport_size({'width': 1400, 'height': 1000})
+    pg.wait_for_timeout(300)
+
+    # View list → same count, active shown as a removable chip on the list
+    pg.click('[data-testid=dash-view-list]')
+    pg.wait_for_url(re.compile(r'/assets\?.*active=true'))
+    pg.wait_for_selector('[data-testid=assets-table]')
+    pg.wait_for_load_state('networkidle')
+    pg.wait_for_timeout(300)
+    check('toggles: list total == dashboard total (2) with an active chip',
+          digits(pg.inner_text('[data-testid=list-total]')) == 2 and '운영 중인 자산만' in pg.inner_text('[data-testid=exact-chips]'), pg.inner_text('[data-testid=list-total]'))
+    pg.go_back()
+    pg.wait_for_selector('[data-testid=toggle-exclude-retired]')
+    dash_settle(pg)
+
+    # turn "exclude retired" off → today's numbers, explicit URL flag, kept on reload
+    pg.locator('[data-testid=toggle-exclude-retired]').click()  # controlled by the URL: click, then wait for the URL
+    pg.wait_for_url(re.compile(r'retired=include'))
+    dash_settle(pg)
+    href = pg.get_attribute('[data-testid=dash-view-list]', 'href')
+    check('toggles: off → total 4, retired tile 2, plain label, list link without active',
+          big(pg) == 4 and pg.inner_text('[data-testid=kpi-RETIRED]').strip().endswith('2') and pg.inner_text('[data-testid=total-label]') == '전체 자산' and 'active=' not in href,
+          (big(pg), pg.inner_text('[data-testid=kpi-RETIRED]'), href))
+    check('toggles: off → API called without active', 'active=' not in api_calls[-1], api_calls[-1:])
+    url = pg.url
+    pg.reload()
+    pg.wait_for_selector('[data-testid=toggle-exclude-retired]')
+    dash_settle(pg)
+    check('toggles: reload keeps retired=include', pg.url == url and not pg.locator('[data-testid=toggle-exclude-retired]').is_checked() and big(pg) == 4, (pg.url, big(pg)))
+
+    # trend toggle: off → the import's transactions come back in the month bar and in the KPI
+    before = last_month_bar(pg)
+    pg.locator('[data-testid=toggle-exclude-imports]').click()
+    pg.wait_for_url(re.compile(r'imports=include'))
+    dash_settle(pg)
+    after = last_month_bar(pg)
+    check('toggles: import toggle off → month bar = all transactions, KPI agrees',
+          before == 1 and after == all_txns and pg.inner_text('[data-testid=kpi-activity]') == str(all_txns) and 'excludeImports' not in api_calls[-1], (before, after, all_txns, api_calls[-1:]))
+    pg.locator('[data-testid=toggle-exclude-imports]').click()
+    pg.wait_for_url(lambda u: 'imports=' not in u)
+    dash_settle(pg)
+    pg.locator('[data-testid=toggle-exclude-retired]').click()
+    pg.wait_for_url(lambda u: 'retired=' not in u)
+    dash_settle(pg)
+    check('toggles: both back on → clean URL, total 2', '?' not in pg.url and big(pg) == 2, (pg.url, big(pg)))
+    ctx.close()
+
+
 # ───────────────────────── assets list: toolbar, status chips, sorting, column filters, reset ─────────────────────────
 def tags_shown(pg):
     return [t.strip() for t in pg.locator('[data-testid=assets-table] tbody tr td:first-child').all_inner_texts()]
@@ -950,6 +1068,7 @@ def main():
         browser = p.chromium.launch(executable_path=os.environ.get('E2E_CHROME', '/usr/bin/google-chrome'), args=['--no-sandbox'])
         test_dashboard(browser)
         test_dashboard_drill(browser)
+        test_dashboard_toggles(browser)
         test_assets_toolbar(browser)
         test_stock_history(browser, ids)
         test_audit(browser)

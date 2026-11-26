@@ -1040,6 +1040,9 @@ html.is-col-resizing * { cursor: col-resize !important; user-select: none !impor
 .dash-field { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--text-secondary); min-width: 0; }
 .dash-field select { padding: 6px 9px; font-size: 13.5px; border-radius: var(--radius-sm); max-width: 220px; }
 .dash-field--inline { flex-direction: row; align-items: center; gap: 6px; }
+/* 켜고 끄기(퇴역 제외, 엑셀 업로드 제외) */
+.dash-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-primary); cursor: pointer; white-space: nowrap; padding: 5px 0; }
+.dash-check input { margin: 0; }
 .dash-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; font-size: 13px; }
 .dash-chips-row__label { color: var(--text-muted); }
 .dash-chips-row__none { color: var(--text-muted); }
@@ -1070,8 +1073,12 @@ html.is-col-resizing * { cursor: col-resize !important; user-select: none !impor
 .kpi-tile:hover { background: var(--btn-hover-bg); border-color: var(--border-hover); }
 .kpi-tile.is-pressed { background: var(--accent-bg); border-color: var(--accent-border); }
 .kpi-tile__label { font-size: 12.5px; color: var(--text-secondary); }
+/* "퇴역 제외"가 켜져 있을 때의 퇴역 칸: 누를 수 없고, 수 대신 "제외됨" */
+.kpi-tile--excluded { cursor: default; border-style: dashed; background: transparent; }
+.kpi-tile--excluded:hover { background: transparent; border-color: var(--border); }
 /* 수는 칸의 아랫줄에 크게(inline-block: 화면 읽기·글자 추출에서는 "이름 수" 한 줄로 읽힌다) */
 .kpi-tile__value { display: inline-block; width: 100%; font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.kpi-tile__value--muted { font-size: 14px; font-weight: 600; color: var(--text-muted); line-height: 1.95; }
 .kpi-rows { margin-top: 0; }
 .kpi-spark { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .dash-num-btn { font: inherit; font-weight: 700; background: none; border: 0; padding: 0 2px; color: var(--link); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -1138,6 +1145,7 @@ circle.donut__slice { stroke-width: 30; }
 .donut__legend li.is-pressed { color: var(--accent-text); font-weight: 600; }
 .donut__legend-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .donut__legend-num { font-variant-numeric: tabular-nums; color: var(--text-primary); font-weight: 600; }
+.donut__legend li.is-excluded .donut__legend-num { color: var(--text-muted); font-weight: 500; font-size: 12.5px; }
 
 /* 가로 막대 */
 .hbar-box { position: relative; }
